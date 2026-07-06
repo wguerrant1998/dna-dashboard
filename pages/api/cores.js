@@ -35,80 +35,52 @@ export default async function handler(req, res) {
       if (statsRes.result) coreStats = coreStats.concat(statsRes.result);
     }
 
-    // DIAGNOSTIC: Let's see how the objects look
-    const firstStatObj = coreStats[0] || {};
-    const availableStatKeys = Object.keys(firstStatObj).join(', ').slice(0, 50);
-
     const combinedData = hids.map(id => {
-      const identity = coreIdentities.find(i => i && (i.hid === id || i.id === id || i.core_id === id || i.coreId === id)) || {};
-      
-      // BROAD MATCHING STRATEGY: check every potential ID field variant
-      const performance = coreStats.find(s => s && (
-        s.hid === id || 
-        s.id === id || 
-        s.core_id === id || 
-        s.coreId === id ||
-        s.core_hid === id
-      )) || {};
+      const identity = coreIdentities.find(i => i && (i.hid === id || i.id === id)) || {};
+      const performance = coreStats.find(s => s && s.hid === id) || {};
 
+      // 1. Identity, Element, Class Parsing
       const element = identity.element || identity.attributes?.element || 'Unknown';
       
-      // Handle F number check
-      let rawF = identity.f_number ?? identity.fnumber ?? identity.generation ?? identity.f_num ?? null;
-      let fNumber = rawF !== null ? `F${rawF}` : '';
-      
-      // If F-number is still blank, let's look inside identity keys to see where it lives
-      if (!fNumber) {
-        const idKeys = Object.keys(identity);
-        if (idKeys.includes('f')) fNumber = `F${identity.f}`;
-        else fNumber = availableStatKeys ? `Keys: ${availableStatKeys}` : 'F1'; 
-      }
+      // Extract Generation details straight from the newly found "ageing" object
+      let genNum = performance.ageing?.generation ?? identity.generation ?? identity.f_number ?? null;
+      let fNumber = genNum !== null ? `F${genNum}` : 'F1';
 
-      let rawClass = identity.class || identity.core_class || identity.type || 'Genesis';
+      let rawClass = identity.class || identity.core_class || 'Genesis';
       if (String(rawClass).toLowerCase().includes('morph')) rawClass = 'Morph';
       if (String(rawClass).toLowerCase().includes('freak')) rawClass = 'Freak';
       if (String(rawClass).toLowerCase().includes('x')) rawClass = 'X-Class';
       if (String(rawClass).toLowerCase().includes('genesis')) rawClass = 'Genesis';
 
-      const gender = identity.gender || identity.sex || (id % 2 === 0 ? 'Male' : 'Female');
+      const gender = identity.gender || (id % 2 === 0 ? 'Male' : 'Female');
 
-      // Unpack racing fields
-      let totalRaces = 0, totalWins = 0, blueStar = 0, yellowStar = 0, wethProfit = 0, dezProfit = 0, bestDist = '1000';
-      let bikeRaces = 0, carRaces = 0, horseRaces = 0;
+      // 2. Direct Target Drilling for Racing Stats
+      const bike = performance.hstats_bike || {};
+      const car = performance.hstats_car || {};
+      const horse = performance.hstats_horse || {};
 
-      // Extract from vehicle specific objects if present
-      if (performance.hstats_bike?.career) {
-        bikeRaces = performance.hstats_bike.career.total_races || 0;
-        totalRaces += bikeRaces;
-        totalWins += performance.hstats_bike.career.wins || 0;
-        blueStar = performance.hstats_bike.career.blue_star_pct || 0;
-        yellowStar = performance.hstats_bike.career.yellow_star_pct || 0;
-      }
-      if (performance.hstats_car?.career) {
-        carRaces = performance.hstats_car.career.total_races || 0;
-        totalRaces += carRaces;
-        totalWins += performance.hstats_car.career.wins || 0;
-      }
-      if (performance.hstats_horse?.career) {
-        horseRaces = performance.hstats_horse.career.total_races || 0;
-        totalRaces += horseRaces;
-        totalWins += performance.hstats_horse.career.wins || 0;
-      }
+      // Summing global actions
+      const bikeRaces = bike.races || bike.total_races || bike.career?.total_races || 0;
+      const carRaces = car.races || car.total_races || car.career?.total_races || 0;
+      const horseRaces = horse.races || horse.total_races || horse.career?.total_races || 0;
 
-      // If flat metrics exist
-      if (performance.total_races) totalRaces = performance.total_races;
-      if (performance.wins && totalWins === 0) totalWins = performance.wins;
-      wethProfit = performance.weth_profit || performance.tourney_profits || performance.weth || 0;
-      dezProfit = performance.dez_profit || performance.dez || 0;
+      const bikeWins = bike.wins || bike.career?.wins || 0;
+      const carWins = car.wins || car.career?.wins || 0;
+      const horseWins = horse.wins || horse.career?.wins || 0;
 
-      // For debugging filters: make sure they don't disappear by giving default value if missing
-      if (totalRaces === 0) {
-        bikeRaces = 1; // Temporary mock value to stop the rows from disappearing while we fix keys
-        carRaces = 1;
-        horseRaces = 1;
-      }
-
+      const totalRaces = bikeRaces + carRaces + horseRaces;
+      const totalWins = bikeWins + carWins + horseWins;
+      
       const winRate = totalRaces > 0 ? ((totalWins / totalRaces) * 100).toFixed(1) : "0.0";
+
+      // Calculate Stars safely by parsing potential variations inside the vehicle payload
+      const blueStar = bike.blue_star_pct || bike.career?.blue_star_pct || car.blue_star_pct || 0;
+      const yellowStar = bike.yellow_star_pct || bike.career?.yellow_star_pct || car.yellow_star_pct || 0;
+
+      // Extract profits
+      const wethProfit = performance.weth_profit || performance.tourney_profits || bike.weth_profit || 0;
+      const dezProfit = performance.dez_profit || bike.dez_profit || 0;
+      const bestDist = bike.best_distance || car.best_distance || '1000';
 
       return {
         hid: id,
@@ -122,8 +94,8 @@ export default async function handler(req, res) {
         winRate,
         blueStar: Number(blueStar).toFixed(1),
         yellowStar: Number(yellowStar).toFixed(1),
-        wethProfit,
-        dezProfit,
+        wethProfit: Number(wethProfit).toFixed(4),
+        dezProfit: Number(dezProfit).toFixed(2),
         bikeRaces,
         carRaces,
         horseRaces
