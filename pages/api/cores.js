@@ -1,53 +1,46 @@
 export default async function handler(req, res) {
   const API_KEY = process.env.DNA_API_KEY; 
-  const VAULT_ADDRESS = "0x1a1d4c5c255635a796ad6f64d16431acb2d37c90
-
-"; // Kept locked from your logs
+  const VAULT_ADDRESS = "0x1a1d4c5c255635a796ad6f64d16431acb2d37c90"; 
 
   try {
-    // 1. Get Core IDs
+    // 1. Get Core IDs first
     const vaultRes = await fetch(`https://api.dnaracing.run/fbike/pub/v1/vault/${VAULT_ADDRESS}/cores`, {
       headers: { "Authorization": `Bearer ${API_KEY}` }
     });
     
     const vaultData = await vaultRes.json();
-    if (vaultData.status !== "success") return res.status(200).json([]);
+    if (vaultData.status !== "success" || !vaultData.result) {
+      return res.status(200).json([]);
+    }
 
-    const hids = vaultData.result || [];
+    const hids = vaultData.result;
     if (hids.length === 0) return res.status(200).json([]);
     
-    // Take the top 20 cores to populate the dashboard safely
+    // Take the top 20 cores to keep things fast
     const targetedHids = hids.slice(0, 20);
 
-    // 2. Fetch Core Identity Info
-    const infoRes = await fetch(`https://api.dnaracing.run/fbike/pub/v1/cores/info_bulk`, {
-      method: 'POST',
-      headers: { "Authorization": `Bearer ${API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ hids: targetedHids }) 
-    });
-    const infoData = await infoRes.json();
-    const coreIdentities = infoData.result || [];
+    // 2. Fire BOTH secondary requests simultaneously in parallel to beat the timeout
+    const [infoRes, statsRes] = await Promise.all([
+      fetch(`https://api.dnaracing.run/fbike/pub/v1/cores/info_bulk`, {
+        method: 'POST',
+        headers: { "Authorization": `Bearer ${API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ hids: targetedHids }) 
+      }).then(r => r.json()).catch(() => ({ result: [] })), // fail gracefully
+      
+      fetch(`https://api.dnaracing.run/fbike/pub/v1/cores/racing_stats_bulk`, {
+        method: 'POST',
+        headers: { "Authorization": `Bearer ${API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ hids: targetedHids })
+      }).then(r => r.json()).catch(() => ({ result: [] })) // fail gracefully
+    ]);
 
-    // 3. Fetch Racing Stats
-    const statsRes = await fetch(`https://api.dnaracing.run/fbike/pub/v1/cores/racing_stats_bulk`, {
-      method: 'POST',
-      headers: { "Authorization": `Bearer ${API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ hids: targetedHids })
-    });
-    const statsData = await statsRes.json();
-    const coreStats = statsData.result || [];
+    const coreIdentities = infoRes.result || [];
+    const coreStats = statsRes.result || [];
 
-    // DEBUG LOGGING - Let's print out exactly what the API returned to the Vercel logs
-    console.log("SAMPLE IDENTITY OBJECT:", JSON.stringify(coreIdentities[0] || "EMPTY"));
-    console.log("SAMPLE STATS OBJECT:", JSON.stringify(coreStats[0] || "EMPTY"));
-
-    // 4. Merge Data (With absolute fallback guarantees)
+    // 3. Merge Data with fallbacks
     const combinedData = targetedHids.map(id => {
-      // Find matches safely by matching either raw ID or property
       const identity = coreIdentities.find(i => i && (i.hid === id || i.id === id)) || {};
       const performance = coreStats.find(s => s && (s.hid === id || s.id === id)) || {};
-      
-      // Navigate nested objects carefully
       const bikeStats = performance.hstats_bike?.career || performance.stats?.career || {};
 
       return {
@@ -64,7 +57,7 @@ export default async function handler(req, res) {
     return res.status(200).json(combinedData);
 
   } catch (error) {
-    console.error("System Fetch Crash:", error.message);
+    console.error("Parallel Fetch Failed:", error.message);
     return res.status(200).json([]);
   }
 }
