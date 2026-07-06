@@ -35,29 +35,33 @@ export default function Dashboard() {
     setSortField(field);
   };
 
-  // Custom Element Style Matrix Configuration
   const getElementStyle = (element) => {
     const el = String(element).toLowerCase();
-    let bg = '#64748b'; // default silver (Metal)
-    if (el.includes('water')) bg = '#2563eb'; // blue
-    if (el.includes('fire')) bg = '#ea580c';  // orange
-    if (el.includes('earth')) bg = '#78350f'; // brown
+    let bg = '#64748b'; // metal
+    if (el.includes('water')) bg = '#2563eb';
+    if (el.includes('fire')) bg = '#ea580c';
+    if (el.includes('earth')) bg = '#78350f';
 
     return {
-      backgroundColor: bg,
-      color: '#ffffff',
-      padding: '4px 9px',
-      borderRadius: '5px',
-      marginRight: '6px',
-      fontWeight: '700',
-      fontSize: '11px',
-      textTransform: 'uppercase',
-      display: 'inline-block',
-      letterSpacing: '0.5px'
+      backgroundColor: bg, color: '#ffffff', padding: '4px 9px', borderRadius: '5px',
+      marginRight: '6px', fontWeight: '700', fontSize: '11px', textTransform: 'uppercase',
+      display: 'inline-block', letterSpacing: '0.5px'
     };
   };
 
-  // Live Statistics Aggregator Engine
+  // Profit formatting function: styles text red if values are below zero
+  const renderProfit = (value, isWeth = false) => {
+    const num = Number(value);
+    const formatted = isWeth ? num.toFixed(4) : num.toFixed(2);
+    const isNegative = num < 0;
+
+    return (
+      <span style={{ color: isNegative ? '#dc2626' : '#0f172a', fontWeight: isNegative ? '700' : '500' }}>
+        {formatted}
+      </span>
+    );
+  };
+
   const computeActiveStats = (core) => {
     let races = 0, wins = 0, blueStar = 0, yellowStar = 0, weth = 0, dez = 0;
     let matches = 0;
@@ -68,7 +72,6 @@ export default function Dashboard() {
       const dMatch = selectedDistance === 'All' || String(node.distance) === String(selectedDistance);
       const gMatch = selectedGate === 'All' || String(node.gate) === String(selectedGate);
       
-      // Flexible format text matching fallback
       let fMatch = selectedFormat === 'All';
       if (!fMatch) {
         const nodeF = String(node.format).toLowerCase();
@@ -93,7 +96,7 @@ export default function Dashboard() {
     const finalBlue = matches > 0 ? (blueStar / matches).toFixed(1) : "0.0";
     const finalYellow = matches > 0 ? (yellowStar / matches).toFixed(1) : "0.0";
 
-    return { races, winRate, blueStar: finalBlue, yellowStar: finalYellow, weth: weth.toFixed(4), dez: dez.toFixed(2) };
+    return { races, winRate, blueStar: finalBlue, yellowStar: finalYellow, weth, dez };
   };
 
   const processedCores = cores.map(core => ({
@@ -125,16 +128,10 @@ export default function Dashboard() {
     });
 
   const filterButtonStyle = (active) => ({
-    padding: '6px 12px',
-    marginRight: '6px',
-    marginBottom: '6px',
-    backgroundColor: active ? '#2563eb' : '#f1f5f9',
-    color: active ? '#fff' : '#334155',
-    border: active ? '1px solid #2563eb' : '1px solid #cbd5e1',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: '600'
+    padding: '6px 12px', marginRight: '6px', marginBottom: '6px',
+    backgroundColor: active ? '#2563eb' : '#f1f5f9', color: active ? '#fff' : '#334155',
+    border: active ? '1px solid #2563eb' : '1px solid #cbd5e1', borderRadius: '6px',
+    cursor: 'pointer', fontSize: '13px', fontWeight: '600'
   });
 
   const distances = ['All', '900', '1000', '1100', '1200', '1300', '1400', '1500', '1600', '1700', '1800', '1900', '2000', '2100', '2200'];
@@ -146,7 +143,7 @@ export default function Dashboard() {
       <h2 style={{ color: '#1e3a8a', marginBottom: '4px' }}>DNA Racing Advanced Analytics</h2>
       <p style={{ color: '#64748b', marginBottom: '25px', fontWeight: '500' }}>Total Loaded Cores: {cores.length}</p>
 
-      {/* Analytics Control Dashboard Panel */}
+      {/* Analytics Control Filters Panel */}
       <div style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '8px', marginBottom: '30px', border: '1px solid #e2e8f0' }}>
         <div style={{ marginBottom: '12px' }}>
           <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '120px', fontWeight: '600' }}>Gender:</span>
@@ -218,7 +215,6 @@ export default function Dashboard() {
                 <td style={{ padding: '14px 12px' }}>
                   <div style={{ fontWeight: 'bold', fontSize: '15px', color: core.colorHex }}>{core.name}</div>
                   <div style={{ fontSize: '11px', marginTop: '6px' }}>
-                    {/* Element-specific badge styling applied dynamically */}
                     <span style={getElementStyle(core.element)}>{core.element}</span>
                     <span style={{ backgroundColor: '#dbeafe', color: '#1e40af', padding: '3px 6px', borderRadius: '4px', marginRight: '5px', fontWeight: '600' }}>{core.fNumber}</span>
                     <span style={{ border: '1px solid #cbd5e1', color: '#475569', padding: '2px 6px', borderRadius: '4px', marginRight: '5px' }}>{core.coreClass}</span>
@@ -229,8 +225,8 @@ export default function Dashboard() {
                 <td style={{ padding: '14px 12px', color: '#16a34a', fontWeight: '600' }}>{core.calculatedStats.winRate}%</td>
                 <td style={{ padding: '14px 12px', color: '#0284c7' }}>{core.calculatedStats.blueStar}%</td>
                 <td style={{ padding: '14px 12px', color: '#d97706' }}>{core.calculatedStats.yellowStar}%</td>
-                <td style={{ padding: '14px 12px' }}>{core.calculatedStats.weth}</td>
-                <td style={{ padding: '14px 12px', color: '#7c3aed' }}>{core.calculatedStats.dez}</td>
+                <td style={{ padding: '14px 12px' }}>{renderProfit(core.calculatedStats.weth, true)}</td>
+                <td style={{ padding: '14px 12px' }}>{renderProfit(core.calculatedStats.dez, false)}</td>
               </tr>
             ))}
           </tbody>
