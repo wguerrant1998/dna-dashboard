@@ -8,10 +8,13 @@ export default function Dashboard() {
   const [sortField, setSortField] = useState('hid');
   const [sortAsc, setSortAsc] = useState(true);
 
+  // Filter States
   const [search, setSearch] = useState('');
   const [selectedDistance, setSelectedDistance] = useState('All');
   const [selectedVehicle, setSelectedVehicle] = useState('All');
   const [selectedGender, setSelectedGender] = useState('All');
+  const [selectedElement, setSelectedElement] = useState('All');
+  const [selectedClass, setSelectedClass] = useState('All');
   const [selectedGates, setSelectedGates] = useState('All');
   const [selectedType, setSelectedType] = useState('All');
 
@@ -51,10 +54,11 @@ export default function Dashboard() {
       const searchStr = search.toLowerCase();
       if (!coreName.includes(searchStr) && !coreId.includes(searchStr)) return false;
 
-      // Safe Gender Filter
+      // Filter Logic
       if (selectedGender !== 'All' && core.gender !== selectedGender.toLowerCase()) return false;
+      if (selectedElement !== 'All' && String(core.element).toLowerCase() !== selectedElement.toLowerCase()) return false;
+      if (selectedClass !== 'All' && String(core.coreClass).toLowerCase() !== selectedClass.toLowerCase()) return false;
 
-      // Smart Vehicle Filter: don't disappear if they ran it at least once
       if (selectedVehicle !== 'All') {
         if (selectedVehicle === 'Bike' && core.bikeRaces === 0) return false;
         if (selectedVehicle === 'Car' && core.carRaces === 0) return false;
@@ -107,11 +111,27 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* New Gender Filter Option */}
+        {/* Gender Filter */}
         <div style={{ marginBottom: '15px' }}>
           <span style={{ marginRight: '15px', color: '#94a3b8', display: 'inline-block', width: '100px' }}>Gender:</span>
           {['All', 'Male', 'Female'].map(g => (
             <button key={g} onClick={() => setSelectedGender(g)} style={filterButtonStyle(selectedGender === g)}>{g}</button>
+          ))}
+        </div>
+
+        {/* Element Filter */}
+        <div style={{ marginBottom: '15px' }}>
+          <span style={{ marginRight: '15px', color: '#94a3b8', display: 'inline-block', width: '100px' }}>Element:</span>
+          {['All', 'Metal', 'Fire', 'Earth', 'Water'].map(e => (
+            <button key={e} onClick={() => setSelectedElement(e)} style={filterButtonStyle(selectedElement === e)}>{e}</button>
+          ))}
+        </div>
+
+        {/* Type / Class Filter */}
+        <div style={{ marginBottom: '15px' }}>
+          <span style={{ marginRight: '15px', color: '#94a3b8', display: 'inline-block', width: '100px' }}>Type:</span>
+          {['All', 'Genesis', 'Morph', 'Freak', 'X-Class'].map(c => (
+            <button key={c} onClick={() => setSelectedClass(c)} style={filterButtonStyle(selectedClass === c)}>{c}</button>
           ))}
         </div>
 
@@ -175,7 +195,7 @@ export default function Dashboard() {
                     <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
                       <span style={{ backgroundColor: '#334155', padding: '2px 6px', borderRadius: '4px', marginRight: '5px', textTransform: 'capitalize' }}>{safeRender(core.element)}</span>
                       <span style={{ backgroundColor: '#1e293b', padding: '2px 6px', borderRadius: '4px', marginRight: '5px' }}>{safeRender(core.fNumber)}</span>
-                      <span style={{ border: '1px solid #475569', padding: '2px 6px', borderRadius: '4px', marginRight: '5px', textTransform: 'uppercase', fontSize: '10px' }}>{safeRender(core.coreClass)}</span>
+                      <span style={{ border: '1px solid #475569', padding: '2px 6px', borderRadius: '4px', marginRight: '5px', textTransform: 'capitalize', fontSize: '10px' }}>{safeRender(core.coreClass)}</span>
                       <span style={{ color: core.gender === 'male' ? '#38bdf8' : '#f472b6', textTransform: 'capitalize' }}>{safeRender(core.gender)}</span>
                     </div>
                   </td>
