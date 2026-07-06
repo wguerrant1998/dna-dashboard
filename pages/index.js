@@ -10,7 +10,6 @@ export default function Dashboard() {
 
   const [search, setSearch] = useState('');
   const [selectedDistance, setSelectedDistance] = useState('All');
-  const [selectedVehicle, setSelectedVehicle] = useState('All');
   const [selectedGender, setSelectedGender] = useState('All');
   const [selectedElement, setSelectedElement] = useState('All');
   const [selectedClass, setSelectedClass] = useState('All');
@@ -36,7 +35,6 @@ export default function Dashboard() {
   const filteredCores = cores
     .filter(core => {
       if (!core) return false;
-      
       const coreName = String(core.name || '').toLowerCase();
       const coreId = String(core.hid || '');
       const searchStr = search.toLowerCase();
@@ -46,11 +44,7 @@ export default function Dashboard() {
       if (selectedElement !== 'All' && String(core.element).toLowerCase() !== selectedElement.toLowerCase()) return false;
       if (selectedClass !== 'All' && String(core.coreClass).toLowerCase() !== selectedClass.toLowerCase()) return false;
 
-      // Smart Multi-Distance Match Check
-      if (selectedDistance !== 'All') {
-        const hasRunDistance = core.allDistances?.includes(String(selectedDistance)) || core.bestDistance === String(selectedDistance);
-        if (!hasRunDistance) return false;
-      }
+      if (selectedDistance !== 'All' && !core.allDistances?.includes(String(selectedDistance))) return false;
 
       return true;
     })
@@ -114,13 +108,13 @@ export default function Dashboard() {
 
       <input 
         type="text" 
-        placeholder="Search core name or custom ID..." 
+        placeholder="Search core name..." 
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         style={{ padding: '10px', width: '100%', maxWidth: '400px', marginBottom: '25px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
       />
 
-      {loading ? <p>Processing performance metrics...</p> : (
+      {loading ? <p>Processing dashboard analytics...</p> : (
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
             <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #e2e8f0' }}>
@@ -144,6 +138,11 @@ export default function Dashboard() {
                     <span style={{ border: '1px solid #cbd5e1', color: '#475569', padding: '2px 6px', borderRadius: '4px', marginRight: '5px' }}>{core.coreClass}</span>
                     <span style={{ color: core.gender === 'male' ? '#0284c7' : '#db2777', fontWeight: '600' }}>{core.gender}</span>
                   </div>
+                  {core.debugText && (
+                    <div style={{ padding: '8px', backgroundColor: '#fee2e2', color: '#b91c1c', border: '1px dashed #ef4444', borderRadius: '4px', fontSize: '10px', marginTop: '10px', fontFamily: 'monospace', maxWidth: '600px', overflowX: 'auto' }}>
+                      {core.debugText}
+                    </div>
+                  )}
                 </td>
                 <td style={{ padding: '14px 12px', fontWeight: '500' }}>{core.totalRaces}</td>
                 <td style={{ padding: '14px 12px', color: '#16a34a', fontWeight: '600' }}>{core.winRate}%</td>
