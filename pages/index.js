@@ -217,12 +217,15 @@ export default function Dashboard() {
             {filteredCores.map((core, i) => (
               <tr key={core.hid || i} style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: i % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
                 <td style={{ padding: '14px 12px' }}>
-                  <div style={{ fontWeight: 'bold', fontSize: '15px', color: '#1e293b' }}>{core.name}</div>
+                  {/* FIXED: Explicitly prints both name AND core ID together */}
+                  <div style={{ fontWeight: 'bold', fontSize: '15px', color: '#1e293b' }}>
+                    {core.name} <span style={{ color: '#64748b', fontWeight: 'normal', fontSize: '13px' }}>#{core.hid}</span>
+                  </div>
                   <div style={{ fontSize: '11px', marginTop: '6px' }}>
                     <span style={getElementStyle(core.element)}>{core.element}</span>
                     <span style={{ backgroundColor: '#f1f5f9', color: '#475569', padding: '3px 6px', borderRadius: '4px', marginRight: '5px', fontWeight: '700' }}>{core.vehicleType}</span>
                     <span style={{ backgroundColor: '#dbeafe', color: '#1e40af', padding: '3px 6px', borderRadius: '4px', marginRight: '5px', fontWeight: '600' }}>{core.fNumber}</span>
-                    <span style={{ border: '1px solid #cbd5e1', color: '#475569', padding: '2px 6px', borderRadius: '4px', marginRight: '5px' }}>{core.coreClass}</span>
+                    <span style={{ backgroundColor: '#fef08a', color: '#854d0e', padding: '3px 6px', borderRadius: '4px', marginRight: '5px', fontWeight: '700' }}>{core.coreClass}</span>
                     <span style={{ color: core.gender === 'male' ? '#0284c7' : '#db2777', fontWeight: '600', textTransform: 'capitalize' }}>{core.gender}</span>
                   </div>
                 </td>
@@ -235,7 +238,6 @@ export default function Dashboard() {
               </tr>
             ))}
           </tbody>
-          
         </table>
       )}
     </div>
