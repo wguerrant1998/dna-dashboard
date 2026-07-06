@@ -144,10 +144,8 @@ export default function Dashboard() {
       <h2 style={{ color: '#1e3a8a', marginBottom: '4px' }}>DNA Racing Advanced Analytics</h2>
       <p style={{ color: '#64748b', marginBottom: '25px', fontWeight: '500' }}>Total Loaded Cores: {cores.length}</p>
 
-      {/* Analytics Control Dashboard Panel */}
+      {/* Control Panel Filter Selection Rows */}
       <div style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '8px', marginBottom: '30px', border: '1px solid #e2e8f0' }}>
-        
-        {/* RESTORED VEHICLE TYPE FILTER SORT ROW */}
         <div style={{ marginBottom: '12px' }}>
           <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '120px', fontWeight: '600' }}>Vehicle Type:</span>
           {['All', 'Bike', 'Horse', 'Car'].map(vt => (
@@ -206,7 +204,7 @@ export default function Dashboard() {
         style={{ padding: '10px', width: '100%', maxWidth: '400px', marginBottom: '25px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
       />
 
-      {loading ? <p style={{ color: '#2563eb', fontWeight: 'bold' }}>Parsing unique vehicle metrics...</p> : (
+      {loading ? <p style={{ color: '#2563eb', fontWeight: 'bold' }}>Syncing vault parameters...</p> : (
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', borderRadius: '8px', overflow: 'hidden' }}>
           <thead>
             <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #e2e8f0', color: '#1e293b' }}>
