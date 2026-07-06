@@ -11,6 +11,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState('');
   const [selectedDistance, setSelectedDistance] = useState('All');
   const [selectedVehicle, setSelectedVehicle] = useState('All');
+  const [selectedGender, setSelectedGender] = useState('All');
   const [selectedGates, setSelectedGates] = useState('All');
   const [selectedType, setSelectedType] = useState('All');
 
@@ -50,7 +51,16 @@ export default function Dashboard() {
       const searchStr = search.toLowerCase();
       if (!coreName.includes(searchStr) && !coreId.includes(searchStr)) return false;
 
-      if (selectedVehicle !== 'All' && String(core.type).toLowerCase() !== selectedVehicle.toLowerCase()) return false;
+      // Safe Gender Filter
+      if (selectedGender !== 'All' && core.gender !== selectedGender.toLowerCase()) return false;
+
+      // Smart Vehicle Filter: don't disappear if they ran it at least once
+      if (selectedVehicle !== 'All') {
+        if (selectedVehicle === 'Bike' && core.bikeRaces === 0) return false;
+        if (selectedVehicle === 'Car' && core.carRaces === 0) return false;
+        if (selectedVehicle === 'Horse' && core.horseRaces === 0) return false;
+      }
+      
       if (selectedDistance !== 'All' && String(core.bestDistance) !== String(selectedDistance)) return false;
 
       return true;
@@ -78,9 +88,6 @@ export default function Dashboard() {
 
   const safeRender = (val, fallback = '0') => {
     if (val === undefined || val === null) return fallback;
-    if (typeof val === 'object') {
-      return val.value !== undefined ? String(val.value) : JSON.stringify(val).slice(0, 10);
-    }
     return String(val);
   };
 
@@ -92,6 +99,7 @@ export default function Dashboard() {
       <p style={{ color: '#94a3b8' }}>Total Loaded Cores: {cores.length}</p>
 
       <div style={{ backgroundColor: '#1e293b', padding: '20px', borderRadius: '8px', marginBottom: '30px', border: '1px solid #334155' }}>
+        {/* Vehicle Filter */}
         <div style={{ marginBottom: '15px' }}>
           <span style={{ marginRight: '15px', color: '#94a3b8', display: 'inline-block', width: '100px' }}>Vehicle:</span>
           {['All', 'Car', 'Horse', 'Bike'].map(v => (
@@ -99,6 +107,15 @@ export default function Dashboard() {
           ))}
         </div>
 
+        {/* New Gender Filter Option */}
+        <div style={{ marginBottom: '15px' }}>
+          <span style={{ marginRight: '15px', color: '#94a3b8', display: 'inline-block', width: '100px' }}>Gender:</span>
+          {['All', 'Male', 'Female'].map(g => (
+            <button key={g} onClick={() => setSelectedGender(g)} style={filterButtonStyle(selectedGender === g)}>{g}</button>
+          ))}
+        </div>
+
+        {/* Distance Filter */}
         <div style={{ marginBottom: '15px' }}>
           <span style={{ marginRight: '15px', color: '#94a3b8', display: 'inline-block', width: '100px' }}>Distance:</span>
           {distances.map(d => (
@@ -106,6 +123,7 @@ export default function Dashboard() {
           ))}
         </div>
 
+        {/* Gates Filter */}
         <div style={{ marginBottom: '15px' }}>
           <span style={{ marginRight: '15px', color: '#94a3b8', display: 'inline-block', width: '100px' }}>Gates:</span>
           {['All', '1', '2', '3', '4', '5', '6', '7', '8', '9+'].map(g => (
@@ -135,7 +153,7 @@ export default function Dashboard() {
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
             <tr style={{ backgroundColor: '#1e293b', cursor: 'pointer', borderBottom: '2px solid #334155' }}>
-              <th onClick={() => handleSort('name')} style={{ padding: '12px' }}>Core Name {sortField === 'name' ? (sortAsc ? '▲' : '▼') : ''}</th>
+              <th onClick={() => handleSort('name')} style={{ padding: '12px' }}>Core Name & Details {sortField === 'name' ? (sortAsc ? '▲' : '▼') : ''}</th>
               <th onClick={() => handleSort('totalRaces')} style={{ padding: '12px' }}>Total Races {sortField === 'totalRaces' ? (sortAsc ? '▲' : '▼') : ''}</th>
               <th onClick={() => handleSort('winRate')} style={{ padding: '12px' }}>Win % {sortField === 'winRate' ? (sortAsc ? '▲' : '▼') : ''}</th>
               <th onClick={() => handleSort('blueStar')} style={{ padding: '12px' }}>Blue Star % {sortField === 'blueStar' ? (sortAsc ? '▲' : '▼') : ''}</th>
@@ -152,7 +170,15 @@ export default function Dashboard() {
             ) : (
               filteredCores.map((core, i) => (
                 <tr key={core.hid || i} style={{ borderBottom: '1px solid #1e293b' }}>
-                  <td style={{ padding: '12px', fontWeight: 'bold' }}>{safeRender(core.name, 'Unnamed')}</td>
+                  <td style={{ padding: '12px' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '15px' }}>{safeRender(core.name, 'Unnamed')}</div>
+                    <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
+                      <span style={{ backgroundColor: '#334155', padding: '2px 6px', borderRadius: '4px', marginRight: '5px', textTransform: 'capitalize' }}>{safeRender(core.element)}</span>
+                      <span style={{ backgroundColor: '#1e293b', padding: '2px 6px', borderRadius: '4px', marginRight: '5px' }}>{safeRender(core.fNumber)}</span>
+                      <span style={{ border: '1px solid #475569', padding: '2px 6px', borderRadius: '4px', marginRight: '5px', textTransform: 'uppercase', fontSize: '10px' }}>{safeRender(core.coreClass)}</span>
+                      <span style={{ color: core.gender === 'male' ? '#38bdf8' : '#f472b6', textTransform: 'capitalize' }}>{safeRender(core.gender)}</span>
+                    </div>
+                  </td>
                   <td style={{ padding: '12px' }}>{safeRender(core.totalRaces)}</td>
                   <td style={{ padding: '12px', color: '#10b981' }}>{safeRender(core.winRate)}%</td>
                   <td style={{ padding: '12px', color: '#38bdf8' }}>{safeRender(core.blueStar)}%</td>
