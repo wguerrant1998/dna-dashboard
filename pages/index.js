@@ -16,6 +16,7 @@ export default function Dashboard() {
   const [selectedClass, setSelectedClass] = useState('All');
   const [selectedGate, setSelectedGate] = useState('All');
   const [selectedFormat, setSelectedFormat] = useState('All');
+  const [selectedVehicleType, setSelectedVehicleType] = useState('All');
 
   useEffect(() => {
     fetch('/api/cores')
@@ -37,7 +38,7 @@ export default function Dashboard() {
 
   const getElementStyle = (element) => {
     const el = String(element).toLowerCase();
-    let bg = '#64748b'; // metal
+    let bg = '#64748b'; 
     if (el.includes('water')) bg = '#2563eb';
     if (el.includes('fire')) bg = '#ea580c';
     if (el.includes('earth')) bg = '#78350f';
@@ -49,7 +50,6 @@ export default function Dashboard() {
     };
   };
 
-  // Profit formatting function: styles text red if values are below zero
   const renderProfit = (value, isWeth = false) => {
     const num = Number(value);
     const formatted = isWeth ? num.toFixed(4) : num.toFixed(2);
@@ -66,7 +66,7 @@ export default function Dashboard() {
     let races = 0, wins = 0, blueStar = 0, yellowStar = 0, weth = 0, dez = 0;
     let matches = 0;
 
-    if (!core.performanceLog) return { races, winRate: "0.0", blueStar: "0.0", yellowStar: "0.0", weth: "0.0000", dez: "0.00" };
+    if (!core.performanceLog) return { races, winRate: "0.0", blueStar: "0.0", yellowStar: "0.0", weth: 0, dez: 0 };
 
     core.performanceLog.forEach(node => {
       const dMatch = selectedDistance === 'All' || String(node.distance) === String(selectedDistance);
@@ -114,6 +114,7 @@ export default function Dashboard() {
       if (selectedGender !== 'All' && core.gender !== selectedGender.toLowerCase()) return false;
       if (selectedElement !== 'All' && String(core.element).toLowerCase() !== selectedElement.toLowerCase()) return false;
       if (selectedClass !== 'All' && String(core.coreClass).toLowerCase() !== selectedClass.toLowerCase()) return false;
+      if (selectedVehicleType !== 'All' && String(core.vehicleType) !== selectedVehicleType) return false;
 
       return true;
     })
@@ -143,8 +144,17 @@ export default function Dashboard() {
       <h2 style={{ color: '#1e3a8a', marginBottom: '4px' }}>DNA Racing Advanced Analytics</h2>
       <p style={{ color: '#64748b', marginBottom: '25px', fontWeight: '500' }}>Total Loaded Cores: {cores.length}</p>
 
-      {/* Analytics Control Filters Panel */}
+      {/* Analytics Control Dashboard Panel */}
       <div style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '8px', marginBottom: '30px', border: '1px solid #e2e8f0' }}>
+        
+        {/* RESTORED VEHICLE TYPE FILTER SORT ROW */}
+        <div style={{ marginBottom: '12px' }}>
+          <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '120px', fontWeight: '600' }}>Vehicle Type:</span>
+          {['All', 'Bike', 'Horse', 'Car'].map(vt => (
+            <button key={vt} onClick={() => setSelectedVehicleType(vt)} style={filterButtonStyle(selectedVehicleType === vt)}>{vt}</button>
+          ))}
+        </div>
+
         <div style={{ marginBottom: '12px' }}>
           <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '120px', fontWeight: '600' }}>Gender:</span>
           {['All', 'Male', 'Female'].map(g => (
@@ -160,7 +170,7 @@ export default function Dashboard() {
         </div>
 
         <div style={{ marginBottom: '12px' }}>
-          <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '120px', fontWeight: '600' }}>Type:</span>
+          <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '120px', fontWeight: '600' }}>Type Tier:</span>
           {['All', 'Genesis', 'Morph', 'Freak', 'X-Class'].map(c => (
             <button key={c} onClick={() => setSelectedClass(c)} style={filterButtonStyle(selectedClass === c)}>{c}</button>
           ))}
@@ -196,7 +206,7 @@ export default function Dashboard() {
         style={{ padding: '10px', width: '100%', maxWidth: '400px', marginBottom: '25px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
       />
 
-      {loading ? <p style={{ color: '#2563eb', fontWeight: 'bold' }}>Parsing deep contract metrics...</p> : (
+      {loading ? <p style={{ color: '#2563eb', fontWeight: 'bold' }}>Parsing unique vehicle metrics...</p> : (
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', borderRadius: '8px', overflow: 'hidden' }}>
           <thead>
             <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #e2e8f0', color: '#1e293b' }}>
@@ -213,9 +223,10 @@ export default function Dashboard() {
             {filteredCores.map((core, i) => (
               <tr key={core.hid || i} style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: i % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
                 <td style={{ padding: '14px 12px' }}>
-                  <div style={{ fontWeight: 'bold', fontSize: '15px', color: core.colorHex }}>{core.name}</div>
+                  <div style={{ fontWeight: 'bold', fontSize: '15px', color: '#1e293b' }}>{core.name}</div>
                   <div style={{ fontSize: '11px', marginTop: '6px' }}>
                     <span style={getElementStyle(core.element)}>{core.element}</span>
+                    <span style={{ backgroundColor: '#f1f5f9', color: '#475569', padding: '3px 6px', borderRadius: '4px', marginRight: '5px', fontWeight: '700' }}>{core.vehicleType}</span>
                     <span style={{ backgroundColor: '#dbeafe', color: '#1e40af', padding: '3px 6px', borderRadius: '4px', marginRight: '5px', fontWeight: '600' }}>{core.fNumber}</span>
                     <span style={{ border: '1px solid #cbd5e1', color: '#475569', padding: '2px 6px', borderRadius: '4px', marginRight: '5px' }}>{core.coreClass}</span>
                     <span style={{ color: core.gender === 'male' ? '#0284c7' : '#db2777', fontWeight: '600', textTransform: 'capitalize' }}>{core.gender}</span>
