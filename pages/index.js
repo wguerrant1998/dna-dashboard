@@ -2,20 +2,27 @@ import { useState, useEffect } from 'react';
 
 export default function Dashboard() {
   const [cores, setCores] = useState([]);
-  const [search, setSearch] = useState('');
-  const [sortField, setSortField] = useState('hid');
-  const [sortAsc, setSortAsc] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  
+  // Sorting states
+  const [sortField, setSortField] = useState('hid');
+  const [sortAsc, setSortAsc] = useState(true);
+
+  // Search & Filter States
+  const [search, setSearch] = useState('');
+  const [selectedDistance, setSelectedDistance] = useState('All');
+  const [selectedVehicle, setSelectedVehicle] = useState('All');
+  const [selectedGates, setSelectedGates] = useState('All');
+  const [selectedType, setSelectedType] = useState('All');
 
   useEffect(() => {
     fetch('/api/cores')
       .then(res => {
-        if (!res.ok) throw new Error('Failed to fetch from API bridge');
+        if (!res.ok) throw new Error('API failed to return data');
         return res.json();
       })
       .then(data => {
-        // Ensure data is always an array so it doesn't crash .filter()
         setCores(Array.isArray(data) ? data : []);
         setLoading(false);
       })
@@ -30,20 +37,36 @@ export default function Dashboard() {
     setSortField(field);
   };
 
-  // Safely grab values for sorting, substituting 0 or empty string if missing
+  // Safe sorting helper
   const getSortValue = (item, field) => {
-    if (!item) return '';
-    return item[field] !== undefined ? item[field] : '';
+    if (!item) return 0;
+    return item[field] !== undefined ? item[field] : 0;
   };
 
-  const sortedCores = [...cores]
+  // Filter & Sort Logic
+  const filteredCores = cores
     .filter(core => {
       if (!core) return false;
+      
+      // Text Search Filter
       const coreName = (core.name || '').toLowerCase();
-      const coreElement = (core.element || '').toLowerCase();
       const coreId = (core.hid || '').toString();
       const searchStr = search.toLowerCase();
-      return coreName.includes(searchStr) || coreElement.includes(searchStr) || coreId.includes(searchStr);
+      if (!coreName.includes(searchStr) && !coreId.includes(searchStr)) return false;
+
+      // Filter: Vehicle Mode
+      if (selectedVehicle !== 'All' && core.type !== selectedVehicle.toLowerCase()) return false;
+      
+      // Filter: Distance
+      if (selectedDistance !== 'All' && core.bestDistance !== selectedDistance) return false;
+
+      // Filter: Gates
+      if (selectedGates !== 'All') {
+        if (selectedGates === '9+' && parseInt(core.threeGateRaces) < 9) return false; // placeholder logic
+        // (Real mapping depends on your custom selection)
+      }
+
+      return true;
     })
     .sort((a, b) => {
       const valA = getSortValue(a, sortField);
@@ -53,53 +76,99 @@ export default function Dashboard() {
       return 0;
     });
 
+  const filterButtonStyle = (active) => ({
+    padding: '8px 14px',
+    marginRight: '8px',
+    marginBottom: '8px',
+    backgroundColor: active ? '#3b82f6' : '#1e293b',
+    color: '#fff',
+    border: '1px solid #334155',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontWeight: active ? 'bold' : 'normal'
+  });
+
   return (
     <div style={{ padding: '40px', fontFamily: 'sans-serif', backgroundColor: '#0f172a', color: '#f8fafc', minHeight: '100vh' }}>
-      <h2>DNA Racing Core Performance Analytics</h2>
-      <p>Analyze 3-gate performance, best distances, and core profits safely.</p>
-      
+      <h2>DNA Racing Advanced Analytics</h2>
+      <p style={{ color: '#94a3b8' }}>Total Loaded Cores: {cores.length}</p>
+
+      {/* --- FILTER INTERFACE PANEL --- */}
+      <div style={{ backgroundColor: '#1e293b', padding: '20px', borderRadius: '8px', marginBottom: '30px', border: '1px solid #334155' }}>
+        
+        {/* Vehicle Mode Filter */}
+        <div style={{ marginBottom: '15px' }}>
+          <span style={{ marginRight: '15px', color: '#94a3b8', display: 'inline-block', width: '100px' }}>Vehicle:</span>
+          {['All', 'Car', 'Horse', 'Bike'].map(v => (
+            <button key={v} onClick={() => setSelectedVehicle(v)} style={filterButtonStyle(selectedVehicle === v)}>{v}</button>
+          ))}
+        </div>
+
+        {/* Distance Filter */}
+        <div style={{ marginBottom: '15px' }}>
+          <span style={{ marginRight: '15px', color: '#94a3b8', display: 'inline-block', width: '100px' }}>Distance:</span>
+          {['All', 'Short', 'Medium', 'Long'].map(d => (
+            <button key={d} onClick={() => setSelectedDistance(d)} style={filterButtonStyle(selectedDistance === d)}>{d}</button>
+          ))}
+        </div>
+
+        {/* Gates Filter */}
+        <div style={{ marginBottom: '15px' }}>
+          <span style={{ marginRight: '15px', color: '#94a3b8', display: 'inline-block', width: '100px' }}>Gates:</span>
+          {['All', '1', '2', '3', '4', '5', '6', '7', '8', '9+'].map(g => (
+            <button key={g} onClick={() => setSelectedGates(g)} style={filterButtonStyle(selectedGates === g)}>{g}</button>
+          ))}
+        </div>
+
+        {/* Race Mode Filter */}
+        <div>
+          <span style={{ marginRight: '15px', color: '#94a3b8', display: 'inline-block', width: '100px' }}>Race Type:</span>
+          {['All', 'WTA', '1v1', 'Top 2', 'Top 3', 'Spin and Go'].map(t => (
+            <button key={t} onClick={() => setSelectedType(t)} style={filterButtonStyle(selectedType === t)}>{t}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Search Input Bar */}
       <input 
         type="text" 
-        placeholder="Search by ID, Name, or Element..." 
+        placeholder="Search core name or custom ID..." 
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        style={{ padding: '10px', width: '100%', maxWidth: '400px', marginBottom: '30px', borderRadius: '6px', border: '1px solid #334155', backgroundColor: '#1e293b', color: '#fff' }}
+        style={{ padding: '10px', width: '100%', maxWidth: '400px', marginBottom: '20px', borderRadius: '6px', border: '1px solid #334155', backgroundColor: '#1e293b', color: '#fff' }}
       />
 
-      {error && (
-        <div style={{ padding: '15px', backgroundColor: '#991b1b', borderRadius: '6px', marginBottom: '20px' }}>
-          <strong>Error Loading Data:</strong> {error}
-        </div>
-      )}
+      {error && <p style={{ color: '#ef4444' }}>Error: {error}</p>}
 
-      {loading ? <p>Loading live data and performance stats...</p> : (
+      {/* --- DATA TABLE --- */}
+      {loading ? <p>Loading all 176 cores and aggregating historical stats...</p> : (
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
-            <tr style={{ backgroundColor: '#1e293b', cursor: 'pointer' }}>
-              <th onClick={() => handleSort('hid')} style={{ padding: '12px', borderBottom: '2px solid #334155' }}>Core ID {sortField === 'hid' ? (sortAsc ? '▲' : '▼') : ''}</th>
-              <th onClick={() => handleSort('name')} style={{ padding: '12px', borderBottom: '2px solid #334155' }}>Name {sortField === 'name' ? (sortAsc ? '▲' : '▼') : ''}</th>
-              <th onClick={() => handleSort('element')} style={{ padding: '12px', borderBottom: '2px solid #334155' }}>Element {sortField === 'element' ? (sortAsc ? '▲' : '▼') : ''}</th>
-              <th onClick={() => handleSort('threeGateWins')} style={{ padding: '12px', borderBottom: '2px solid #334155' }}>3-Gate Wins {sortField === 'threeGateWins' ? (sortAsc ? '▲' : '▼') : ''}</th>
-              <th onClick={() => handleSort('threeGateRaces')} style={{ padding: '12px', borderBottom: '2px solid #334155' }}>3-Gate Races {sortField === 'threeGateRaces' ? (sortAsc ? '▲' : '▼') : ''}</th>
-              <th onClick={() => handleSort('bestDistance')} style={{ padding: '12px', borderBottom: '2px solid #334155' }}>Best Distance {sortField === 'bestDistance' ? (sortAsc ? '▲' : '▼') : ''}</th>
-              <th onClick={() => handleSort('totalProfit')} style={{ padding: '12px', borderBottom: '2px solid #334155' }}>Profits ($) {sortField === 'totalProfit' ? (sortAsc ? '▲' : '▼') : ''}</th>
+            <tr style={{ backgroundColor: '#1e293b', cursor: 'pointer', borderBottom: '2px solid #334155' }}>
+              <th onClick={() => handleSort('name')} style={{ padding: '12px' }}>Core Name {sortField === 'name' ? (sortAsc ? '▲' : '▼') : ''}</th>
+              <th onClick={() => handleSort('totalRaces')} style={{ padding: '12px' }}>Total Races {sortField === 'totalRaces' ? (sortAsc ? '▲' : '▼') : ''}</th>
+              <th onClick={() => handleSort('winRate')} style={{ padding: '12px' }}>Win % {sortField === 'winRate' ? (sortAsc ? '▲' : '▼') : ''}</th>
+              <th onClick={() => handleSort('blueStar')} style={{ padding: '12px' }}>Blue Star % {sortField === 'blueStar' ? (sortAsc ? '▲' : '▼') : ''}</th>
+              <th onClick={() => handleSort('yellowStar')} style={{ padding: '12px' }}>Yellow Star % {sortField === 'yellowStar' ? (sortAsc ? '▲' : '▼') : ''}</th>
+              <th onClick={() => handleSort('wethProfit')} style={{ padding: '12px' }}>WETH Profit {sortField === 'wethProfit' ? (sortAsc ? '▲' : '▼') : ''}</th>
+              <th onClick={() => handleSort('dezProfit')} style={{ padding: '12px' }}>DEZ Profit {sortField === 'dezProfit' ? (sortAsc ? '▲' : '▼') : ''}</th>
             </tr>
           </thead>
           <tbody>
-            {sortedCores.length === 0 ? (
+            {filteredCores.length === 0 ? (
               <tr>
-                <td colSpan="7" style={{ padding: '20px', textAlign: 'center', color: '#94a3b8' }}>No cores found or data is empty.</td>
+                <td colSpan="7" style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>No matching cores found.</td>
               </tr>
             ) : (
-              sortedCores.map(core => (
-                <tr key={core.hid} style={{ borderBottom: '1px solid #334155', backgroundColor: '#0f172a' }}>
-                  <td style={{ padding: '12px' }}>#{core.hid}</td>
-                  <td style={{ padding: '12px', fontWeight: 'bold' }}>{core.name || 'Unnamed'}</td>
-                  <td style={{ padding: '12px', textTransform: 'capitalize' }}>{core.element || 'N/A'}</td>
-                  <td style={{ padding: '12px', color: '#10b981' }}>{core.threeGateWins ?? 0} W</td>
-                  <td style={{ padding: '12px' }}>{core.threeGateRaces ?? 0}</td>
-                  <td style={{ padding: '12px', color: '#38bdf8' }}>{core.bestDistance || 'N/A'}</td>
-                  <td style={{ padding: '12px', color: '#fbbf24' }}>{core.totalProfit ?? 0}</td>
+              filteredCores.map(core => (
+                <tr key={core.hid} style={{ borderBottom: '1px solid #1e293b' }}>
+                  <td style={{ padding: '12px', fontWeight: 'bold' }}>{core.name}</td>
+                  <td style={{ padding: '12px' }}>{core.totalRaces}</td>
+                  <td style={{ padding: '12px', color: '#10b981' }}>{core.winRate}%</td>
+                  <td style={{ padding: '12px', color: '#38bdf8' }}>{core.blueStar}%</td>
+                  <td style={{ padding: '12px', color: '#eab308' }}>{core.yellowStar}%</td>
+                  <td style={{ padding: '12px' }}>{core.wethProfit} Ξ</td>
+                  <td style={{ padding: '12px', color: '#a855f7' }}>{core.dezProfit} DEZ</td>
                 </tr>
               ))
             )}
