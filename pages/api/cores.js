@@ -36,70 +36,66 @@ export default async function handler(req, res) {
     }
 
     const combinedData = hids.map(id => {
-      // Robust cross-reference checking for matching payload fields
-      const identity = coreIdentities.find(i => i && (i.hid === id || i.id === id || String(i.hid) === String(id))) || {};
-      
-      // Let's check why stats are 0: look for structural ID properties or fallback to the current index position
-      let performance = coreStats.find(s => s && (s.hid === id || String(s.hid) === String(id))) || {};
-      let isFallbackUsed = false;
-      if (!performance.hid && coreStats[coreIdentities.indexOf(identity)]) {
-        performance = coreStats[coreIdentities.indexOf(identity)];
-        isFallbackUsed = true;
-      }
+      const identity = coreIdentities.find(i => i && (i.hid === id || i.id === id)) || {};
+      const performance = coreStats.find(s => s && s.hid === id) || {};
 
+      // 1. Core Identification and Type Rules
       const element = identity.element || identity.attributes?.element || 'Unknown';
       
-      // Generation Extraction
-      let genNum = performance.ageing?.generation ?? identity.generation ?? identity.f_number ?? identity.attributes?.generation ?? null;
-      let fNumber = genNum !== null ? `F${genNum}` : 'F1';
+      let genNum = performance.ageing?.generation ?? identity.generation ?? '1';
+      let fNumber = `F${genNum}`;
 
-      // 1. EXTENDED CLASS SCANNER: Search deep for class variations
-      let rawClass = identity.class || identity.core_class || identity.tier || identity.attributes?.class || identity.attributes?.tier || '';
-      let strToCheck = JSON.stringify(identity).toLowerCase() + JSON.stringify(performance).toLowerCase();
-      
-      let coreClass = 'Genesis'; // Default setting
-      if (strToCheck.includes('morph')) coreClass = 'Morph';
-      else if (strToCheck.includes('freak')) coreClass = 'Freak';
-      else if (strToCheck.includes('x-class') || strToCheck.includes('xclass')) coreClass = 'X-Class';
+      // Mapping 'type' key to Core Classes
+      let typeStr = String(identity.type || '').toLowerCase();
+      let coreClass = 'Genesis';
+      if (typeStr.includes('morph')) coreClass = 'Morph';
+      else if (typeStr.includes('freak')) coreClass = 'Freak';
+      else if (typeStr.includes('x')) coreClass = 'X-Class';
 
-      // 2. CORE COLOR SCANNER: Translate metadata labels to standard color hex codes
-      let colorHex = '#1e3a8a'; // Blue fallback
-      let colorStr = String(identity.color || identity.attributes?.color || identity.name || '').toLowerCase();
-      
+      // 2. Map Dynamic Colors
+      let colorHex = '#1e3a8a'; 
+      let colorStr = String(identity.color || identity.name || '').toLowerCase();
       if (colorStr.includes('red')) colorHex = '#dc2626';
       else if (colorStr.includes('blue')) colorHex = '#2563eb';
       else if (colorStr.includes('green')) colorHex = '#16a34a';
       else if (colorStr.includes('yellow') || colorStr.includes('gold')) colorHex = '#d97706';
-      else if (colorStr.includes('purple') || colorStr.includes('violet')) colorHex = '#7c3aed';
-      else if (colorStr.includes('orange')) colorHex = '#ea580c';
+      else if (colorStr.includes('purple')) colorHex = '#7c3aed';
       else if (colorStr.includes('pink')) colorHex = '#db2777';
 
       const gender = identity.gender || (id % 2 === 0 ? 'Male' : 'Female');
 
-      // 3. STATS RECURSION EXTRACTOR
-      let totalRaces = 0, totalWins = 0, blueStar = 0, yellowStar = 0, wethProfit = 0, dezProfit = 0, bestDist = '1000';
+      // 3. Extract Statistics out of Nested Vehicle Maps
+      let totalRaces = 0, totalWins = 0, blueStar = 0, yellowStar = 0, wethProfit = 0, dezProfit = 0;
+      let activeDistances = [];
 
-      const scanObj = (obj) => {
-        if (!obj || typeof obj !== 'object') return;
-        if (obj.total_races !== undefined) totalRaces += Number(obj.total_races || 0);
-        if (obj.races !== undefined) totalRaces += Number(obj.races || 0);
-        if (obj.wins !== undefined) totalWins += Number(obj.wins || 0);
-        if (obj.weth_profit !== undefined) wethProfit = Number(obj.weth_profit || 0);
-        if (obj.dez_profit !== undefined) dezProfit = Number(obj.dez_profit || 0);
-        if (obj.blue_star_pct !== undefined) blueStar = Number(obj.blue_star_pct || 0);
-        if (obj.yellow_star_pct !== undefined) yellowStar = Number(obj.yellow_star_pct || 0);
-        for (const k in obj) { if (obj.hasOwnProperty(k)) scanObj(obj[k]); }
-      };
+      // Loop over possible vehicles
+      const vehicles = ['hstats_bike', 'hstats_car', 'hstats_horse'];
+      vehicles.forEach(vKey => {
+        const vData = performance[vKey];
+        if (!vData) return;
 
-      scanObj(performance);
+        // Process overall vehicle stats
+        if (vData.total_races || vData.races) totalRaces += Number(vData.total_races || vData.races || 0);
+        if (vData.wins) totalWins += Number(vData.wins || 0);
+        if (vData.weth_profit) wethProfit += Number(vData.weth_profit || 0);
+        if (vData.dez_profit) dezProfit += Number(vData.dez_profit || 0);
+
+        // Dig inside distance submaps if present
+        const distMap = vData.distances || vData.distance_stats || {};
+        Object.keys(distMap).forEach(d => {
+          activeDistances.push(String(d));
+          const dData = distMap[d] || {};
+          // Fallback parsing if main totals are empty
+          if (!vData.total_races) {
+            totalRaces += Number(dData.total_races || dData.races || 0);
+            totalWins += Number(dData.wins || 0);
+          }
+          if (dData.blue_star_pct) blueStar = Number(dData.blue_star_pct);
+          if (dData.yellow_star_pct) yellowStar = Number(dData.yellow_star_pct);
+        });
+      });
 
       const winRate = totalRaces > 0 ? ((totalWins / totalRaces) * 100).toFixed(1) : "0.0";
-
-      // If stats remain 0, let's output a diagnostic message under the core name
-      let debugKeys = '';
-      if (totalRaces === 0) {
-        debugKeys = `ID:${id} | IdentityKeys: ${Object.keys(identity).slice(0,3).join(',')} | StatsKeys: ${Object.keys(performance).slice(0,3).join(',')}`;
-      }
 
       return {
         hid: id,
@@ -109,14 +105,14 @@ export default async function handler(req, res) {
         coreClass,
         colorHex,
         gender: String(gender).toLowerCase(),
-        bestDistance: String(bestDist),
+        bestDistance: activeDistances.length > 0 ? activeDistances[0] : '1000',
+        allDistances: activeDistances, // Sent to frontend for advanced sorting
         totalRaces,
         winRate,
         blueStar: Number(blueStar).toFixed(1),
         yellowStar: Number(yellowStar).toFixed(1),
         wethProfit: Number(wethProfit).toFixed(4),
-        dezProfit: Number(dezProfit).toFixed(2),
-        debugKeys: debugKeys.includes('IdentityKeys') ? debugKeys : null
+        dezProfit: Number(dezProfit).toFixed(2)
       };
     });
 
