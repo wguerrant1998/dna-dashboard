@@ -22,7 +22,7 @@ export default function Dashboard() {
       .then(res => res.json())
       .then(data => {
         setCores(Array.isArray(data) ? data : []);
-        setLoading(false)
+        setLoading(false);
       })
       .catch(err => {
         setError(err.message);
@@ -35,42 +35,48 @@ export default function Dashboard() {
     setSortField(field);
   };
 
-  // Helper function to color code the elements dynamically
+  // Custom Element Style Matrix Configuration
   const getElementStyle = (element) => {
     const el = String(element).toLowerCase();
-    let bg = '#64748b'; // default silver
+    let bg = '#64748b'; // default silver (Metal)
     if (el.includes('water')) bg = '#2563eb'; // blue
     if (el.includes('fire')) bg = '#ea580c';  // orange
     if (el.includes('earth')) bg = '#78350f'; // brown
-    if (el.includes('metal')) bg = '#64748b'; // silver
 
     return {
       backgroundColor: bg,
       color: '#ffffff',
-      padding: '3px 8px',
-      borderRadius: '4px',
+      padding: '4px 9px',
+      borderRadius: '5px',
       marginRight: '6px',
-      fontWeight: 'bold',
+      fontWeight: '700',
       fontSize: '11px',
       textTransform: 'uppercase',
-      display: 'inline-block'
+      display: 'inline-block',
+      letterSpacing: '0.5px'
     };
   };
 
-  // Dynamic Real-time Calculations
-  const computeStats = (core) => {
+  // Live Statistics Aggregator Engine
+  const computeActiveStats = (core) => {
     let races = 0, wins = 0, blueStar = 0, yellowStar = 0, weth = 0, dez = 0;
-    let matchCount = 0;
+    let matches = 0;
 
-    if (!core.performanceLog || core.performanceLog.length === 0) {
-      return { races: 0, winRate: "0.0", blueStar: "0.0", yellowStar: "0.0", weth: "0.0000", dez: "0.00" };
-    }
+    if (!core.performanceLog) return { races, winRate: "0.0", blueStar: "0.0", yellowStar: "0.0", weth: "0.0000", dez: "0.00" };
 
     core.performanceLog.forEach(node => {
-      // Flexible matching fallback: if "All" is active, pass through, otherwise match strictly
       const dMatch = selectedDistance === 'All' || String(node.distance) === String(selectedDistance);
       const gMatch = selectedGate === 'All' || String(node.gate) === String(selectedGate);
-      const fMatch = selectedFormat === 'All' || String(node.format) === String(selectedFormat);
+      
+      // Flexible format text matching fallback
+      let fMatch = selectedFormat === 'All';
+      if (!fMatch) {
+        const nodeF = String(node.format).toLowerCase();
+        const selF = selectedFormat.toLowerCase();
+        if (selF === 'spin and go' && (nodeF.includes('spin') || nodeF.includes('go'))) fMatch = true;
+        else if (selF === 'double up' && (nodeF.includes('double') || nodeF.includes('up'))) fMatch = true;
+        else if (nodeF.includes(selF)) fMatch = true;
+      }
 
       if (dMatch && gMatch && fMatch) {
         races += Number(node.races || 0);
@@ -79,21 +85,20 @@ export default function Dashboard() {
         yellowStar += Number(node.yellowStar || 0);
         weth += Number(node.weth || 0);
         dez += Number(node.dez || 0);
-        matchCount++;
+        matches++;
       }
     });
 
-    // Final calculations safeguard
     const winRate = races > 0 ? ((wins / races) * 100).toFixed(1) : "0.0";
-    const avgBlue = matchCount > 0 ? (blueStar / matchCount).toFixed(1) : "0.0";
-    const avgYellow = matchCount > 0 ? (yellowStar / matchCount).toFixed(1) : "0.0";
+    const finalBlue = matches > 0 ? (blueStar / matches).toFixed(1) : "0.0";
+    const finalYellow = matches > 0 ? (yellowStar / matches).toFixed(1) : "0.0";
 
-    return { races, winRate, blueStar: avgBlue, yellowStar: avgYellow, weth: weth.toFixed(4), dez: dez.toFixed(2) };
+    return { races, winRate, blueStar: finalBlue, yellowStar: finalYellow, weth: weth.toFixed(4), dez: dez.toFixed(2) };
   };
 
   const processedCores = cores.map(core => ({
     ...core,
-    calculatedStats: computeStats(core)
+    calculatedStats: computeActiveStats(core)
   }));
 
   const filteredCores = processedCores
@@ -128,7 +133,8 @@ export default function Dashboard() {
     border: active ? '1px solid #2563eb' : '1px solid #cbd5e1',
     borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '13px'
+    fontSize: '13px',
+    fontWeight: '600'
   });
 
   const distances = ['All', '900', '1000', '1100', '1200', '1300', '1400', '1500', '1600', '1700', '1800', '1900', '2000', '2100', '2200'];
@@ -140,7 +146,7 @@ export default function Dashboard() {
       <h2 style={{ color: '#1e3a8a', marginBottom: '4px' }}>DNA Racing Advanced Analytics</h2>
       <p style={{ color: '#64748b', marginBottom: '25px', fontWeight: '500' }}>Total Loaded Cores: {cores.length}</p>
 
-      {/* Control Filters Block */}
+      {/* Analytics Control Dashboard Panel */}
       <div style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '8px', marginBottom: '30px', border: '1px solid #e2e8f0' }}>
         <div style={{ marginBottom: '12px' }}>
           <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '120px', fontWeight: '600' }}>Gender:</span>
@@ -193,7 +199,7 @@ export default function Dashboard() {
         style={{ padding: '10px', width: '100%', maxWidth: '400px', marginBottom: '25px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
       />
 
-      {loading ? <p style={{ color: '#2563eb' }}>Recalculating data streams...</p> : (
+      {loading ? <p style={{ color: '#2563eb', fontWeight: 'bold' }}>Parsing deep contract metrics...</p> : (
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', borderRadius: '8px', overflow: 'hidden' }}>
           <thead>
             <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #e2e8f0', color: '#1e293b' }}>
@@ -212,7 +218,7 @@ export default function Dashboard() {
                 <td style={{ padding: '14px 12px' }}>
                   <div style={{ fontWeight: 'bold', fontSize: '15px', color: core.colorHex }}>{core.name}</div>
                   <div style={{ fontSize: '11px', marginTop: '6px' }}>
-                    {/* CUSTOM RE-COLORED ELEMENT BADGE */}
+                    {/* Element-specific badge styling applied dynamically */}
                     <span style={getElementStyle(core.element)}>{core.element}</span>
                     <span style={{ backgroundColor: '#dbeafe', color: '#1e40af', padding: '3px 6px', borderRadius: '4px', marginRight: '5px', fontWeight: '600' }}>{core.fNumber}</span>
                     <span style={{ border: '1px solid #cbd5e1', color: '#475569', padding: '2px 6px', borderRadius: '4px', marginRight: '5px' }}>{core.coreClass}</span>
