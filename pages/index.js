@@ -5,11 +5,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
-  // Sorting states
   const [sortField, setSortField] = useState('hid');
   const [sortAsc, setSortAsc] = useState(true);
 
-  // Search & Filter States
   const [search, setSearch] = useState('');
   const [selectedDistance, setSelectedDistance] = useState('All');
   const [selectedVehicle, setSelectedVehicle] = useState('All');
@@ -37,34 +35,25 @@ export default function Dashboard() {
     setSortField(field);
   };
 
-  // Safe sorting helper
   const getSortValue = (item, field) => {
     if (!item) return 0;
-    return item[field] !== undefined ? item[field] : 0;
+    const val = item[field];
+    return isNaN(Number(val)) ? val : Number(val);
   };
 
-  // Filter & Sort Logic
   const filteredCores = cores
     .filter(core => {
       if (!core) return false;
       
-      // Text Search Filter
       const coreName = (core.name || '').toLowerCase();
       const coreId = (core.hid || '').toString();
       const searchStr = search.toLowerCase();
       if (!coreName.includes(searchStr) && !coreId.includes(searchStr)) return false;
 
-      // Filter: Vehicle Mode
       if (selectedVehicle !== 'All' && core.type !== selectedVehicle.toLowerCase()) return false;
       
-      // Filter: Distance
-      if (selectedDistance !== 'All' && core.bestDistance !== selectedDistance) return false;
-
-      // Filter: Gates
-      if (selectedGates !== 'All') {
-        if (selectedGates === '9+' && parseInt(core.threeGateRaces) < 9) return false; // placeholder logic
-        // (Real mapping depends on your custom selection)
-      }
+      // Strict distance check against our new numeric array strings
+      if (selectedDistance !== 'All' && String(core.bestDistance) !== String(selectedDistance)) return false;
 
       return true;
     })
@@ -77,23 +66,25 @@ export default function Dashboard() {
     });
 
   const filterButtonStyle = (active) => ({
-    padding: '8px 14px',
-    marginRight: '8px',
-    marginBottom: '8px',
+    padding: '6px 10px',
+    marginRight: '6px',
+    marginBottom: '6px',
     backgroundColor: active ? '#3b82f6' : '#1e293b',
     color: '#fff',
     border: '1px solid #334155',
-    borderRadius: '6px',
+    borderRadius: '4px',
     cursor: 'pointer',
+    fontSize: '13px',
     fontWeight: active ? 'bold' : 'normal'
   });
+
+  const distances = ['All', '900', '1000', '1100', '1200', '1300', '1400', '1500', '1600', '1700', '1800', '1900', '2000', '2100', '2200'];
 
   return (
     <div style={{ padding: '40px', fontFamily: 'sans-serif', backgroundColor: '#0f172a', color: '#f8fafc', minHeight: '100vh' }}>
       <h2>DNA Racing Advanced Analytics</h2>
       <p style={{ color: '#94a3b8' }}>Total Loaded Cores: {cores.length}</p>
 
-      {/* --- FILTER INTERFACE PANEL --- */}
       <div style={{ backgroundColor: '#1e293b', padding: '20px', borderRadius: '8px', marginBottom: '30px', border: '1px solid #334155' }}>
         
         {/* Vehicle Mode Filter */}
@@ -104,10 +95,10 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Distance Filter */}
+        {/* Updated Numeric Distance Filter Panel */}
         <div style={{ marginBottom: '15px' }}>
           <span style={{ marginRight: '15px', color: '#94a3b8', display: 'inline-block', width: '100px' }}>Distance:</span>
-          {['All', 'Short', 'Medium', 'Long'].map(d => (
+          {distances.map(d => (
             <button key={d} onClick={() => setSelectedDistance(d)} style={filterButtonStyle(selectedDistance === d)}>{d}</button>
           ))}
         </div>
@@ -129,7 +120,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Search Input Bar */}
       <input 
         type="text" 
         placeholder="Search core name or custom ID..." 
@@ -140,7 +130,6 @@ export default function Dashboard() {
 
       {error && <p style={{ color: '#ef4444' }}>Error: {error}</p>}
 
-      {/* --- DATA TABLE --- */}
       {loading ? <p>Loading all 176 cores and aggregating historical stats...</p> : (
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
@@ -167,8 +156,8 @@ export default function Dashboard() {
                   <td style={{ padding: '12px', color: '#10b981' }}>{core.winRate}%</td>
                   <td style={{ padding: '12px', color: '#38bdf8' }}>{core.blueStar}%</td>
                   <td style={{ padding: '12px', color: '#eab308' }}>{core.yellowStar}%</td>
-                  <td style={{ padding: '12px' }}>{core.wethProfit} Ξ</td>
-                  <td style={{ padding: '12px', color: '#a855f7' }}>{core.dezProfit} DEZ</td>
+                  <td style={{ padding: '12px' }}>{core.wethProfit}</td>
+                  <td style={{ padding: '12px', color: '#a855f7' }}>{core.dezProfit}</td>
                 </tr>
               ))
             )}
