@@ -8,11 +8,14 @@ export default function Dashboard() {
   const [sortField, setSortField] = useState('hid');
   const [sortAsc, setSortAsc] = useState(true);
 
+  // Filter Management States
   const [search, setSearch] = useState('');
   const [selectedDistance, setSelectedDistance] = useState('All');
   const [selectedGender, setSelectedGender] = useState('All');
   const [selectedElement, setSelectedElement] = useState('All');
   const [selectedClass, setSelectedClass] = useState('All');
+  const [selectedGate, setSelectedGate] = useState('All');
+  const [selectedFormat, setSelectedFormat] = useState('All');
 
   useEffect(() => {
     fetch('/api/cores')
@@ -32,9 +35,44 @@ export default function Dashboard() {
     setSortField(field);
   };
 
-  const filteredCores = cores
+  // Live Statistics Matrix Calculator
+  const computeActiveStats = (core) => {
+    let races = 0, wins = 0, blueStar = 0, yellowStar = 0, weth = 0, dez = 0;
+    let nodesCount = 0;
+
+    if (!core.performanceLog) return { races, winRate: "0.0", blueStar: "0.0", yellowStar: "0.0", weth: "0.0000", dez: "0.00" };
+
+    core.performanceLog.forEach(node => {
+      // Direct intersection match logic checks
+      const matchDist = selectedDistance === 'All' || String(node.distance) === String(selectedDistance);
+      const matchGate = selectedGate === 'All' || String(node.gate) === String(selectedGate);
+      const matchForm = selectedFormat === 'All' || String(node.format).toLowerCase().includes(selectedFormat.toLowerCase());
+
+      if (matchDist && matchGate && matchForm) {
+        races += Number(node.races || 0);
+        wins += Number(node.wins || 0);
+        blueStar += Number(node.blueStar || 0);
+        yellowStar += Number(node.yellowStar || 0);
+        weth += Number(node.weth || 0);
+        dez += Number(node.dez || 0);
+        nodesCount++;
+      }
+    });
+
+    const winRate = races > 0 ? ((wins / races) * 100).toFixed(1) : "0.0";
+    const avgBlue = nodesCount > 0 ? (blueStar / nodesCount).toFixed(1) : "0.0";
+    const avgYellow = nodesCount > 0 ? (yellowStar / nodesCount).toFixed(1) : "0.0";
+
+    return { races, winRate, blueStar: avgBlue, yellowStar: avgYellow, weth: weth.toFixed(4), dez: dez.toFixed(2) };
+  };
+
+  const processedCores = cores.map(core => {
+    const stats = computeActiveStats(core);
+    return { ...core, calculatedStats: stats };
+  });
+
+  const filteredCores = processedCores
     .filter(core => {
-      if (!core) return false;
       const coreName = String(core.name || '').toLowerCase();
       const coreId = String(core.hid || '');
       const searchStr = search.toLowerCase();
@@ -44,13 +82,12 @@ export default function Dashboard() {
       if (selectedElement !== 'All' && String(core.element).toLowerCase() !== selectedElement.toLowerCase()) return false;
       if (selectedClass !== 'All' && String(core.coreClass).toLowerCase() !== selectedClass.toLowerCase()) return false;
 
-      if (selectedDistance !== 'All' && !core.allDistances?.includes(String(selectedDistance))) return false;
-
       return true;
     })
     .sort((a, b) => {
-      let valA = a[sortField];
-      let valB = b[sortField];
+      let valA = sortField === 'name' || sortField === 'hid' ? a[sortField] : a.calculatedStats[sortField];
+      let valB = sortField === 'name' || sortField === 'hid' ? b[sortField] : b.calculatedStats[sortField];
+      
       if (!isNaN(Number(valA))) { valA = Number(valA); valB = Number(valB); }
       if (valA < valB) return sortAsc ? -1 : 1;
       if (valA > valB) return sortAsc ? 1 : -1;
@@ -66,65 +103,83 @@ export default function Dashboard() {
     border: active ? '1px solid #2563eb' : '1px solid #cbd5e1',
     borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '13px'
+    fontSize: '13px',
+    fontWeight: active ? 'bold' : 'normal'
   });
 
   const distances = ['All', '900', '1000', '1100', '1200', '1300', '1400', '1500', '1600', '1700', '1800', '1900', '2000', '2100', '2200'];
+  const gates = ['All', '1', '2', '3', '4', '5', '6', '7', '8', '9+'];
+  const formats = ['All', '1v1', 'Spin and Go', 'Top 2', 'Double Up', 'Top 3', 'WTA'];
 
   return (
     <div style={{ padding: '40px', fontFamily: 'sans-serif', backgroundColor: '#ffffff', color: '#0f172a', minHeight: '100vh' }}>
       <h2 style={{ color: '#1e3a8a', marginBottom: '4px' }}>DNA Racing Advanced Analytics</h2>
-      <p style={{ color: '#64748b', marginBottom: '25px' }}>Total Loaded Cores: {cores.length}</p>
+      <p style={{ color: '#64748b', marginBottom: '25px', fontWeight: '500' }}>Total Loaded Cores: {cores.length}</p>
 
+      {/* Dynamic Filter Station */}
       <div style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '8px', marginBottom: '30px', border: '1px solid #e2e8f0' }}>
         <div style={{ marginBottom: '12px' }}>
-          <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '100px', fontWeight: '600' }}>Gender:</span>
+          <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '120px', fontWeight: '600' }}>Gender:</span>
           {['All', 'Male', 'Female'].map(g => (
             <button key={g} onClick={() => setSelectedGender(g)} style={filterButtonStyle(selectedGender === g)}>{g}</button>
           ))}
         </div>
 
         <div style={{ marginBottom: '12px' }}>
-          <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '100px', fontWeight: '600' }}>Element:</span>
+          <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '120px', fontWeight: '600' }}>Element:</span>
           {['All', 'Metal', 'Fire', 'Earth', 'Water'].map(e => (
             <button key={e} onClick={() => setSelectedElement(e)} style={filterButtonStyle(selectedElement === e)}>{e}</button>
           ))}
         </div>
 
         <div style={{ marginBottom: '12px' }}>
-          <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '100px', fontWeight: '600' }}>Type:</span>
+          <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '120px', fontWeight: '600' }}>Type:</span>
           {['All', 'Genesis', 'Morph', 'Freak', 'X-Class'].map(c => (
             <button key={c} onClick={() => setSelectedClass(c)} style={filterButtonStyle(selectedClass === c)}>{c}</button>
           ))}
         </div>
 
-        <div>
-          <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '100px', fontWeight: '600' }}>Distance:</span>
+        <div style={{ marginBottom: '12px' }}>
+          <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '120px', fontWeight: '600' }}>Distance:</span>
           {distances.map(d => (
             <button key={d} onClick={() => setSelectedDistance(d)} style={filterButtonStyle(selectedDistance === d)}>{d}</button>
+          ))}
+        </div>
+
+        <div style={{ marginBottom: '12px' }}>
+          <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '120px', fontWeight: '600' }}>Gate Box:</span>
+          {gates.map(g => (
+            <button key={g} onClick={() => setSelectedGate(g)} style={filterButtonStyle(selectedGate === g)}>{g}</button>
+          ))}
+        </div>
+
+        <div>
+          <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '120px', fontWeight: '600' }}>Race Format:</span>
+          {formats.map(f => (
+            <button key={f} onClick={() => setSelectedFormat(f)} style={filterButtonStyle(selectedFormat === f)}>{f}</button>
           ))}
         </div>
       </div>
 
       <input 
         type="text" 
-        placeholder="Search core name..." 
+        placeholder="Search core name or custom ID..." 
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        style={{ padding: '10px', width: '100%', maxWidth: '400px', marginBottom: '25px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+        style={{ padding: '10px', width: '100%', maxWidth: '400px', marginBottom: '25px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#fff' }}
       />
 
-      {loading ? <p>Processing dashboard analytics...</p> : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+      {loading ? <p style={{ color: '#2563eb' }}>Recalculating segments mapping...</p> : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', borderRadius: '8px', overflow: 'hidden' }}>
           <thead>
-            <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #e2e8f0' }}>
+            <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #e2e8f0', color: '#1e293b' }}>
               <th onClick={() => handleSort('name')} style={{ padding: '14px 12px', cursor: 'pointer' }}>Core Name & Details</th>
-              <th onClick={() => handleSort('totalRaces')} style={{ padding: '14px 12px', cursor: 'pointer' }}>Total Races</th>
+              <th onClick={() => handleSort('races')} style={{ padding: '14px 12px', cursor: 'pointer' }}>Segment Races</th>
               <th onClick={() => handleSort('winRate')} style={{ padding: '14px 12px', cursor: 'pointer' }}>Win %</th>
               <th onClick={() => handleSort('blueStar')} style={{ padding: '14px 12px', cursor: 'pointer' }}>Blue Star %</th>
               <th onClick={() => handleSort('yellowStar')} style={{ padding: '14px 12px', cursor: 'pointer' }}>Yellow Star %</th>
-              <th onClick={() => handleSort('wethProfit')} style={{ padding: '14px 12px', cursor: 'pointer' }}>WETH Profit</th>
-              <th onClick={() => handleSort('dezProfit')} style={{ padding: '14px 12px', cursor: 'pointer' }}>DEZ Profit</th>
+              <th onClick={() => handleSort('weth')} style={{ padding: '14px 12px', cursor: 'pointer' }}>WETH Profit</th>
+              <th onClick={() => handleSort('dez')} style={{ padding: '14px 12px', cursor: 'pointer' }}>DEZ Profit</th>
             </tr>
           </thead>
           <tbody>
@@ -138,18 +193,13 @@ export default function Dashboard() {
                     <span style={{ border: '1px solid #cbd5e1', color: '#475569', padding: '2px 6px', borderRadius: '4px', marginRight: '5px' }}>{core.coreClass}</span>
                     <span style={{ color: core.gender === 'male' ? '#0284c7' : '#db2777', fontWeight: '600' }}>{core.gender}</span>
                   </div>
-                  {core.debugText && (
-                    <div style={{ padding: '8px', backgroundColor: '#fee2e2', color: '#b91c1c', border: '1px dashed #ef4444', borderRadius: '4px', fontSize: '10px', marginTop: '10px', fontFamily: 'monospace', maxWidth: '600px', overflowX: 'auto' }}>
-                      {core.debugText}
-                    </div>
-                  )}
                 </td>
-                <td style={{ padding: '14px 12px', fontWeight: '500' }}>{core.totalRaces}</td>
-                <td style={{ padding: '14px 12px', color: '#16a34a', fontWeight: '600' }}>{core.winRate}%</td>
-                <td style={{ padding: '14px 12px', color: '#0284c7' }}>{core.blueStar}%</td>
-                <td style={{ padding: '14px 12px', color: '#d97706' }}>{core.yellowStar}%</td>
-                <td style={{ padding: '14px 12px' }}>{core.wethProfit}</td>
-                <td style={{ padding: '14px 12px', color: '#7c3aed' }}>{core.dezProfit}</td>
+                <td style={{ padding: '14px 12px', fontWeight: '500' }}>{core.calculatedStats.races}</td>
+                <td style={{ padding: '14px 12px', color: '#16a34a', fontWeight: '600' }}>{core.calculatedStats.winRate}%</td>
+                <td style={{ padding: '14px 12px', color: '#0284c7' }}>{core.calculatedStats.blueStar}%</td>
+                <td style={{ padding: '14px 12px', color: '#d97706' }}>{core.calculatedStats.yellowStar}%</td>
+                <td style={{ padding: '14px 12px' }}>{core.calculatedStats.weth}</td>
+                <td style={{ padding: '14px 12px', color: '#7c3aed' }}>{core.calculatedStats.dez}</td>
               </tr>
             ))}
           </tbody>
