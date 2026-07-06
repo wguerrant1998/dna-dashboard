@@ -57,16 +57,7 @@ export default function Dashboard() {
       if (selectedGender !== 'All' && core.gender !== selectedGender.toLowerCase()) return false;
       if (selectedElement !== 'All' && String(core.element).toLowerCase() !== selectedElement.toLowerCase()) return false;
       if (selectedClass !== 'All' && String(core.coreClass).toLowerCase() !== selectedClass.toLowerCase()) return false;
-      
       if (selectedDistance !== 'All' && String(core.bestDistance) !== String(selectedDistance)) return false;
-
-      // Fixed Vehicle Filter matching logic
-      if (selectedVehicle !== 'All') {
-        const v = selectedVehicle.toLowerCase();
-        if (v === 'bike' && core.bikeRaces === 0 && core.totalRaces > 0) return false;
-        if (v === 'car' && core.carRaces === 0 && core.totalRaces > 0) return false;
-        if (v === 'horse' && core.horseRaces === 0 && core.totalRaces > 0) return false;
-      }
 
       return true;
     })
@@ -139,20 +130,6 @@ export default function Dashboard() {
             <button key={d} onClick={() => setSelectedDistance(d)} style={filterButtonStyle(selectedDistance === d)}>{d}</button>
           ))}
         </div>
-
-        <div style={{ marginBottom: '12px' }}>
-          <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '100px', fontWeight: '600' }}>Gates:</span>
-          {['All', '1', '2', '3', '4', '5', '6', '7', '8', '9+'].map(g => (
-            <button key={g} onClick={() => setSelectedGates(g)} style={filterButtonStyle(selectedGates === g)}>{g}</button>
-          ))}
-        </div>
-
-        <div>
-          <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '100px', fontWeight: '600' }}>Race Type:</span>
-          {['All', 'WTA', '1v1', 'Top 2', 'Top 3', 'Spin and Go'].map(t => (
-            <button key={t} onClick={() => setSelectedType(t)} style={filterButtonStyle(selectedType === t)}>{t}</button>
-          ))}
-        </div>
       </div>
 
       <input 
@@ -187,13 +164,19 @@ export default function Dashboard() {
               filteredCores.map((core, i) => (
                 <tr key={core.hid || i} style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: i % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
                   <td style={{ padding: '14px 12px' }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '15px', color: '#1e3a8a' }}>{safeRender(core.name, 'Unnamed')}</div>
+                    {/* DYNAMIC TEXT COLOR APPLIED HERE */}
+                    <div style={{ fontWeight: 'bold', fontSize: '15px', color: core.colorHex || '#1e3a8a' }}>
+                      {safeRender(core.name, 'Unnamed')}
+                    </div>
                     <div style={{ fontSize: '11px', marginTop: '6px' }}>
                       <span style={{ backgroundColor: '#e2e8f0', color: '#334155', padding: '3px 6px', borderRadius: '4px', marginRight: '5px', fontWeight: '600', textTransform: 'capitalize' }}>{safeRender(core.element)}</span>
                       <span style={{ backgroundColor: '#dbeafe', color: '#1e40af', padding: '3px 6px', borderRadius: '4px', marginRight: '5px', fontWeight: '600' }}>{safeRender(core.fNumber)}</span>
                       <span style={{ border: '1px solid #cbd5e1', color: '#475569', padding: '2px 6px', borderRadius: '4px', marginRight: '5px', fontWeight: '500', textTransform: 'capitalize' }}>{safeRender(core.coreClass)}</span>
                       <span style={{ color: core.gender === 'male' ? '#0284c7' : '#db2777', fontWeight: '600', textTransform: 'capitalize' }}>{safeRender(core.gender)}</span>
                     </div>
+                    {core.debugKeys && (
+                      <div style={{ fontSize: '9px', color: '#ef4444', marginTop: '4px', fontFamily: 'monospace' }}>{core.debugKeys}</div>
+                    )}
                   </td>
                   <td style={{ padding: '14px 12px', fontWeight: '500' }}>{safeRender(core.totalRaces)}</td>
                   <td style={{ padding: '14px 12px', color: '#16a34a', fontWeight: '600' }}>{safeRender(core.winRate)}%</td>
