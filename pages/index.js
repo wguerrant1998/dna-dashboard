@@ -36,23 +36,21 @@ export default function Dashboard() {
   };
 
   const getSortValue = (item, field) => {
-    if (!item) return 0;
+    if (!item || item[field] === undefined || item[field] === null) return 0;
     const val = item[field];
-    return isNaN(Number(val)) ? val : Number(val);
+    return isNaN(Number(val)) ? String(val).toLowerCase() : Number(val);
   };
 
   const filteredCores = cores
     .filter(core => {
       if (!core) return false;
       
-      const coreName = (core.name || '').toLowerCase();
-      const coreId = (core.hid || '').toString();
+      const coreName = String(core.name || '').toLowerCase();
+      const coreId = String(core.hid || '');
       const searchStr = search.toLowerCase();
       if (!coreName.includes(searchStr) && !coreId.includes(searchStr)) return false;
 
-      if (selectedVehicle !== 'All' && core.type !== selectedVehicle.toLowerCase()) return false;
-      
-      // Strict distance check against our new numeric array strings
+      if (selectedVehicle !== 'All' && String(core.type).toLowerCase() !== selectedVehicle.toLowerCase()) return false;
       if (selectedDistance !== 'All' && String(core.bestDistance) !== String(selectedDistance)) return false;
 
       return true;
@@ -78,6 +76,14 @@ export default function Dashboard() {
     fontWeight: active ? 'bold' : 'normal'
   });
 
+  const safeRender = (val, fallback = '0') => {
+    if (val === undefined || val === null) return fallback;
+    if (typeof val === 'object') {
+      return val.value !== undefined ? String(val.value) : JSON.stringify(val).slice(0, 10);
+    }
+    return String(val);
+  };
+
   const distances = ['All', '900', '1000', '1100', '1200', '1300', '1400', '1500', '1600', '1700', '1800', '1900', '2000', '2100', '2200'];
 
   return (
@@ -86,8 +92,6 @@ export default function Dashboard() {
       <p style={{ color: '#94a3b8' }}>Total Loaded Cores: {cores.length}</p>
 
       <div style={{ backgroundColor: '#1e293b', padding: '20px', borderRadius: '8px', marginBottom: '30px', border: '1px solid #334155' }}>
-        
-        {/* Vehicle Mode Filter */}
         <div style={{ marginBottom: '15px' }}>
           <span style={{ marginRight: '15px', color: '#94a3b8', display: 'inline-block', width: '100px' }}>Vehicle:</span>
           {['All', 'Car', 'Horse', 'Bike'].map(v => (
@@ -95,7 +99,6 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Updated Numeric Distance Filter Panel */}
         <div style={{ marginBottom: '15px' }}>
           <span style={{ marginRight: '15px', color: '#94a3b8', display: 'inline-block', width: '100px' }}>Distance:</span>
           {distances.map(d => (
@@ -103,7 +106,6 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Gates Filter */}
         <div style={{ marginBottom: '15px' }}>
           <span style={{ marginRight: '15px', color: '#94a3b8', display: 'inline-block', width: '100px' }}>Gates:</span>
           {['All', '1', '2', '3', '4', '5', '6', '7', '8', '9+'].map(g => (
@@ -111,7 +113,6 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Race Mode Filter */}
         <div>
           <span style={{ marginRight: '15px', color: '#94a3b8', display: 'inline-block', width: '100px' }}>Race Type:</span>
           {['All', 'WTA', '1v1', 'Top 2', 'Top 3', 'Spin and Go'].map(t => (
@@ -149,15 +150,15 @@ export default function Dashboard() {
                 <td colSpan="7" style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>No matching cores found.</td>
               </tr>
             ) : (
-              filteredCores.map(core => (
-                <tr key={core.hid} style={{ borderBottom: '1px solid #1e293b' }}>
-                  <td style={{ padding: '12px', fontWeight: 'bold' }}>{core.name}</td>
-                  <td style={{ padding: '12px' }}>{core.totalRaces}</td>
-                  <td style={{ padding: '12px', color: '#10b981' }}>{core.winRate}%</td>
-                  <td style={{ padding: '12px', color: '#38bdf8' }}>{core.blueStar}%</td>
-                  <td style={{ padding: '12px', color: '#eab308' }}>{core.yellowStar}%</td>
-                  <td style={{ padding: '12px' }}>{core.wethProfit}</td>
-                  <td style={{ padding: '12px', color: '#a855f7' }}>{core.dezProfit}</td>
+              filteredCores.map((core, i) => (
+                <tr key={core.hid || i} style={{ borderBottom: '1px solid #1e293b' }}>
+                  <td style={{ padding: '12px', fontWeight: 'bold' }}>{safeRender(core.name, 'Unnamed')}</td>
+                  <td style={{ padding: '12px' }}>{safeRender(core.totalRaces)}</td>
+                  <td style={{ padding: '12px', color: '#10b981' }}>{safeRender(core.winRate)}%</td>
+                  <td style={{ padding: '12px', color: '#38bdf8' }}>{safeRender(core.blueStar)}%</td>
+                  <td style={{ padding: '12px', color: '#eab308' }}>{safeRender(core.yellowStar)}%</td>
+                  <td style={{ padding: '12px' }}>{safeRender(core.wethProfit)}</td>
+                  <td style={{ padding: '12px', color: '#a855f7' }}>{safeRender(core.dezProfit)}</td>
                 </tr>
               ))
             )}
