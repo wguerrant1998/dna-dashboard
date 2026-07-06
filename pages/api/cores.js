@@ -1,6 +1,8 @@
 export default async function handler(req, res) {
   const API_KEY = process.env.DNA_API_KEY; 
-  const VAULT_ADDRESS = "0x1a1d4c5c255635a796ad6f64d16431acb2d37c90"; // <-- MAKE SURE TO PUT YOUR WALLET/EMAIL HERE
+  const VAULT_ADDRESS = "0x1a1d4c5c255635a796ad6f64d16431acb2d37c90
+
+"; // <-- Make sure your address stays here!
 
   console.log("Starting API Fetch for Vault:", VAULT_ADDRESS);
 
@@ -11,20 +13,15 @@ export default async function handler(req, res) {
     });
     
     const vaultData = await vaultRes.json();
-    console.log("Vault Response Status:", vaultData.status);
-    
     if (vaultData.status !== "success") {
       console.error("Vault Error Details:", vaultData.err);
-      return res.status(200).json([]); // Return empty gracefully so site doesn't crash
+      return res.status(200).json([]);
     }
 
     const hids = vaultData.result;
-    console.log("Found Core IDs:", hids);
+    console.log("Found Core IDs:", hids ? hids.length : 0, "cores found.");
 
-    if (!hids || hids.length === 0) {
-      return res.status(200).json([]); // No bikes in vault
-    }
-
+    if (!hids || hids.length === 0) return res.status(200).json([]);
     const targetedHids = hids.slice(0, 20);
 
     // 2. Fetch Core Identity Info
@@ -37,7 +34,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({ hids: targetedHids }) 
     });
     const infoData = await infoRes.json();
-    const coreIdentities = infoData.result || [];
+    console.log("Identity Bulk Status:", infoData.status, "Count:", infoData.result ? infoData.result.length : 0);
 
     // 3. Fetch Racing Stats
     const statsRes = await fetch(`https://api.dnaracing.run/fbike/pub/v1/cores/racing_stats_bulk`, {
@@ -49,16 +46,20 @@ export default async function handler(req, res) {
       body: JSON.stringify({ hids: targetedHids })
     });
     const statsData = await statsRes.json();
-    const coreStats = statsData.result || [];
+    console.log("Racing Stats Bulk Status:", statsData.status, "Count:", statsData.result ? statsData.result.length : 0);
 
     // 4. Merge Data
-    const combinedData = coreIdentities.map(identity => {
-      const performance = coreStats.find(s => s.hid === identity.hid) || {};
+    const coreIdentities = infoData.result || [];
+    const coreStats = statsData.result || [];
+
+    const combinedData = targetedHids.map(id => {
+      const identity = coreIdentities.find(i => i.hid === id) || {};
+      const performance = coreStats.find(s => s.hid === id) || {};
       const bikeStats = performance.hstats_bike?.career || {};
 
       return {
-        hid: identity.hid,
-        name: identity.name || `Core #${identity.hid}`,
+        hid: id,
+        name: identity.name || `Core #${id}`,
         type: identity.type || 'N/A',
         element: identity.element || 'N/A',
         threeGateWins: bikeStats.gates_3_wins || 0,
