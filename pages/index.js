@@ -8,7 +8,7 @@ export default function Dashboard() {
   const [sortField, setSortField] = useState('hid');
   const [sortAsc, setSortAsc] = useState(true);
 
-  // Filters
+  // Filter States
   const [search, setSearch] = useState('');
   const [selectedDistance, setSelectedDistance] = useState('All');
   const [selectedGender, setSelectedGender] = useState('All');
@@ -104,6 +104,7 @@ export default function Dashboard() {
     calculatedStats: computeActiveStats(core)
   }));
 
+  // Normalized Case-Insensitive Filter System
   const filteredCores = processedCores
     .filter(core => {
       const coreName = String(core.name || '').toLowerCase();
@@ -111,10 +112,10 @@ export default function Dashboard() {
       const searchStr = search.toLowerCase();
       if (!coreName.includes(searchStr) && !coreId.includes(searchStr)) return false;
 
-      if (selectedGender !== 'All' && core.gender !== selectedGender.toLowerCase()) return false;
+      if (selectedGender !== 'All' && String(core.gender).toLowerCase() !== selectedGender.toLowerCase()) return false;
       if (selectedElement !== 'All' && String(core.element).toLowerCase() !== selectedElement.toLowerCase()) return false;
       if (selectedClass !== 'All' && String(core.coreClass).toLowerCase() !== selectedClass.toLowerCase()) return false;
-      if (selectedVehicleType !== 'All' && String(core.vehicleType) !== selectedVehicleType) return false;
+      if (selectedVehicleType !== 'All' && String(core.vehicleType).toLowerCase() !== selectedVehicleType.toLowerCase()) return false;
 
       return true;
     })
@@ -142,9 +143,9 @@ export default function Dashboard() {
   return (
     <div style={{ padding: '40px', fontFamily: 'sans-serif', backgroundColor: '#ffffff', color: '#0f172a', minHeight: '100vh' }}>
       <h2 style={{ color: '#1e3a8a', marginBottom: '4px' }}>DNA Racing Advanced Analytics</h2>
-      <p style={{ color: '#64748b', marginBottom: '25px', fontWeight: '500' }}>Total Loaded Cores: {cores.length}</p>
+      <p style={{ color: '#64748b', marginBottom: '25px', fontWeight: '500' }}>Total Cores Found: {filteredCores.length} / {cores.length}</p>
 
-      {/* Control Panel Filter Selection Rows */}
+      {/* Control Filter Modules */}
       <div style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '8px', marginBottom: '30px', border: '1px solid #e2e8f0' }}>
         <div style={{ marginBottom: '12px' }}>
           <span style={{ marginRight: '15px', color: '#475569', display: 'inline-block', width: '120px', fontWeight: '600' }}>Vehicle Type:</span>
@@ -204,7 +205,7 @@ export default function Dashboard() {
         style={{ padding: '10px', width: '100%', maxWidth: '400px', marginBottom: '25px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
       />
 
-      {loading ? <p style={{ color: '#2563eb', fontWeight: 'bold' }}>Syncing vault parameters...</p> : (
+      {loading ? <p style={{ color: '#2563eb', fontWeight: 'bold' }}>Syncing core stats pipeline...</p> : (
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', borderRadius: '8px', overflow: 'hidden' }}>
           <thead>
             <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '2px solid #e2e8f0', color: '#1e293b' }}>
