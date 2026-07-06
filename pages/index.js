@@ -7,7 +7,6 @@ export default function Dashboard() {
   const [sortField, setSortField] = useState('hid');
   const [sortAsc, setSortAsc] = useState(true);
 
-  // Active Filter Triggers
   const [search, setSearch] = useState('');
   const [selectedDistance, setSelectedDistance] = useState('All');
   const [selectedGender, setSelectedGender] = useState('All');
@@ -59,40 +58,42 @@ export default function Dashboard() {
   };
 
   const computeActiveStats = (core) => {
-    let races = 0, wins = 0, blueStar = 0, yellowStar = 0, weth = 0, dez = 0;
-    let matches = 0;
+    let totalRaces = 0, totalWins = 0, totalBlue = 0, totalYellow = 0, totalWeth = 0, totalDez = 0;
+    let matchCount = 0;
 
-    if (!core.performanceLog) return { races, winRate: "0.0", blueStar: "0.0", yellowStar: "0.0", weth: 0, dez: 0 };
+    if (!core.performanceLog || core.performanceLog.length === 0) {
+      return { races: 0, winRate: "0.0", blueStar: "0.0", yellowStar: "0.0", weth: 0, dez: 0 };
+    }
 
     core.performanceLog.forEach(node => {
       const dMatch = selectedDistance === 'All' || String(node.distance) === String(selectedDistance);
       const gMatch = selectedGate === 'All' || String(node.gate) === String(selectedGate);
-      
-      let fMatch = selectedFormat === 'All';
-      if (!fMatch) {
-        const nodeF = String(node.format).toLowerCase();
-        const selF = selectedFormat.toLowerCase();
-        if (selF === 'spin and go' && (nodeF.includes('spin') || nodeF.includes('go'))) fMatch = true;
-        else if (selF === 'double up' && (nodeF.includes('double') || nodeF.includes('up'))) fMatch = true;
-        else if (nodeF.includes(selF)) fMatch = true;
-      }
+      const fMatch = selectedFormat === 'All' || String(node.format).toLowerCase().includes(selectedFormat.toLowerCase());
 
       if (dMatch && gMatch && fMatch) {
-        races += Number(node.races || 0);
-        wins += Number(node.wins || 0);
-        blueStar += Number(node.blueStar || 0);
-        yellowStar += Number(node.yellowStar || 0);
-        weth += Number(node.weth || 0);
-        dez += Number(node.dez || 0);
-        matches++;
+        totalRaces += Number(node.races || 0);
+        totalWins += Number(node.wins || 0);
+        totalBlue += Number(node.blueStar || 0);
+        totalYellow += Number(node.yellowStar || 0);
+        totalWeth += Number(node.weth || 0);
+        totalDez += Number(node.dez || 0);
+        matchCount++;
       }
     });
 
-    const winRate = races > 0 ? ((wins / races) * 100).toFixed(1) : "0.0";
-    const finalBlue = matches > 0 ? (blueStar / matches).toFixed(1) : "0.0";
-    const finalYellow = matches > 0 ? (yellowStar / matches).toFixed(1) : "0.0";
+    // FIXED: Calculate true weighted win percentages instead of inflated flat numbers
+    const winRate = totalRaces > 0 ? ((totalWins / totalRaces) * 100).toFixed(1) : "0.0";
+    const avgBlue = matchCount > 0 ? (totalBlue / matchCount).toFixed(1) : "0.0";
+    const avgYellow = matchCount > 0 ? (totalYellow / matchCount).toFixed(1) : "0.0";
 
-    return { races, winRate, blueStar: finalBlue, yellowStar: finalYellow, weth, dez };
+    return { 
+      races: totalRaces, 
+      winRate, 
+      blueStar: avgBlue, 
+      yellowStar: avgYellow, 
+      weth: totalWeth, 
+      dez: totalDez 
+    };
   };
 
   const processedCores = cores.map(core => ({
@@ -217,7 +218,6 @@ export default function Dashboard() {
             {filteredCores.map((core, i) => (
               <tr key={core.hid || i} style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: i % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
                 <td style={{ padding: '14px 12px' }}>
-                  {/* FIXED: Explicitly prints both name AND core ID together */}
                   <div style={{ fontWeight: 'bold', fontSize: '15px', color: '#1e293b' }}>
                     {core.name} <span style={{ color: '#64748b', fontWeight: 'normal', fontSize: '13px' }}>#{core.hid}</span>
                   </div>
