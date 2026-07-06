@@ -39,45 +39,74 @@ export default async function handler(req, res) {
       const identity = coreIdentities.find(i => i && (i.hid === id || i.id === id)) || {};
       const performance = coreStats.find(s => s && (s.hid === id || s.id === id)) || {};
 
-      // Explicit Identity Parsing
+      // 1. Precise Identity Property Parsing
       const element = identity.element || identity.attributes?.element || 'Unknown';
-      const fNumber = identity.f_number || identity.fnumber || identity.generation || 'F?';
-      const coreClass = identity.class || identity.core_class || 'Standard'; // Genesis, Morph, Freak, X-Class
-      const gender = identity.gender || (id % 2 === 0 ? 'Male' : 'Female'); // Fallback strategy if missing
+      
+      // Look for any variable that resembles generation or f_number configurations
+      let rawF = identity.f_number ?? identity.fnumber ?? identity.generation ?? identity.metadata?.f_number ?? null;
+      let fNumber = rawF !== null ? `F${rawF}` : 'F1'; // Defaulting safely if missing
+      
+      let rawClass = identity.class || identity.core_class || identity.type || 'Genesis';
+      if (String(rawClass).toLowerCase().includes('morph')) rawClass = 'Morph';
+      if (String(rawClass).toLowerCase().includes('freak')) rawClass = 'Freak';
+      if (String(rawClass).toLowerCase().includes('x')) rawClass = 'X-Class';
+      if (String(rawClass).toLowerCase().includes('genesis')) rawClass = 'Genesis';
 
-      // Explicit Multi-Vehicle Performance Parsing
-      // Combines bike, car, and horse totals to ensure stats show up globally or can be filtered
+      const gender = identity.gender || (id % 2 === 0 ? 'Male' : 'Female');
+
+      // 2. Comprehensive Scanning Loop for Performance Counters
+      let totalRaces = 0, totalWins = 0, blueStar = 0, yellowStar = 0, wethProfit = 0, dezProfit = 0, bestDist = '1000';
+
+      const inspectData = (obj) => {
+        if (!obj || typeof obj !== 'object') return;
+
+        if (obj.weth_profit !== undefined) wethProfit = obj.weth_profit;
+        if (obj.dez_profit !== undefined) dezProfit = obj.dez_profit;
+
+        if (obj.total_races !== undefined) totalRaces += Number(obj.total_races);
+        if (obj.races !== undefined) totalRaces += Number(obj.races);
+        if (obj.wins !== undefined) totalWins += Number(obj.wins);
+
+        if (obj.blue_star_pct !== undefined) blueStar = obj.blue_star_pct;
+        if (obj.yellow_star_pct !== undefined) yellowStar = obj.yellow_star_pct;
+        if (obj.best_distance !== undefined) bestDist = String(obj.best_distance);
+
+        for (const key in obj) {
+          if (obj.hasOwnProperty(key)) inspectData(obj[key]);
+        }
+      };
+
+      inspectData(performance);
+
+      // Clean fallback if direct calculations were missed inside loops
       const bikeCareer = performance.hstats_bike?.career || {};
       const carCareer = performance.hstats_car?.career || {};
       const horseCareer = performance.hstats_horse?.career || {};
 
-      const totalRaces = (bikeCareer.total_races || 0) + (carCareer.total_races || 0) + (horseCareer.total_races || 0);
-      const totalWins = (bikeCareer.wins || 0) + (carCareer.wins || 0) + (horseCareer.wins || 0);
+      if (totalRaces === 0) {
+        totalRaces = (bikeCareer.total_races || 0) + (carCareer.total_races || 0) + (horseCareer.total_races || 0);
+        totalWins = (bikeCareer.wins || 0) + (carCareer.wins || 0) + (horseCareer.wins || 0);
+        blueStar = bikeCareer.blue_star_pct || carCareer.blue_star_pct || horseCareer.blue_star_pct || 0;
+        yellowStar = bikeCareer.yellow_star_pct || carCareer.yellow_star_pct || horseCareer.yellow_star_pct || 0;
+        bestDist = bikeCareer.best_distance_text || carCareer.best_distance_text || horseCareer.best_distance_text || '1000';
+      }
+
       const winRate = totalRaces > 0 ? ((totalWins / totalRaces) * 100).toFixed(1) : "0.0";
-
-      const blueStar = bikeCareer.blue_star_pct || carCareer.blue_star_pct || horseCareer.blue_star_pct || 0;
-      const yellowStar = bikeCareer.yellow_star_pct || carCareer.yellow_star_pct || horseCareer.yellow_star_pct || 0;
-
-      // Extract profits
-      const wethProfit = performance.weth_profit || performance.tourney_profits || 0;
-      const dezProfit = performance.dez_profit || 0;
-      const bestDist = bikeCareer.best_distance_text || carCareer.best_distance_text || horseCareer.best_distance_text || '1000';
 
       return {
         hid: id,
         name: identity.name || `Core #${id}`,
         element,
         fNumber,
-        coreClass,
+        coreClass: rawClass,
         gender: String(gender).toLowerCase(),
         bestDistance: String(bestDist),
         totalRaces,
         winRate,
         blueStar: Number(blueStar).toFixed(1),
         yellowStar: Number(yellowStar).toFixed(1),
-        wethProfit,
-        dezProfit,
-        // Keep separate types accessible for frontend filtering
+        wethProfit: wethProfit || performance.weth || 0,
+        dezProfit: dezProfit || performance.dez || 0,
         bikeRaces: bikeCareer.total_races || 0,
         carRaces: carCareer.total_races || 0,
         horseRaces: horseCareer.total_races || 0
