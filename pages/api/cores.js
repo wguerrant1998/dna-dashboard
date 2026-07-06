@@ -39,10 +39,9 @@ export default async function handler(req, res) {
       const identity = coreIdentities.find(i => i && (i.hid === id || i.id === id)) || {};
       const performance = coreStats.find(s => s && s.hid === id) || {};
 
-      // 1. Identity, Element, Class Parsing
       const element = identity.element || identity.attributes?.element || 'Unknown';
       
-      // Extract Generation details straight from the newly found "ageing" object
+      // Generation Pull from performance.ageing
       let genNum = performance.ageing?.generation ?? identity.generation ?? identity.f_number ?? null;
       let fNumber = genNum !== null ? `F${genNum}` : 'F1';
 
@@ -54,33 +53,57 @@ export default async function handler(req, res) {
 
       const gender = identity.gender || (id % 2 === 0 ? 'Male' : 'Female');
 
-      // 2. Direct Target Drilling for Racing Stats
-      const bike = performance.hstats_bike || {};
-      const car = performance.hstats_car || {};
-      const horse = performance.hstats_horse || {};
+      // Universal recursive extractor loop
+      let totalRaces = 0, totalWins = 0, blueStar = 0, yellowStar = 0, wethProfit = 0, dezProfit = 0, bestDist = '1000';
+      let bikeRaces = 0, carRaces = 0, horseRaces = 0;
 
-      // Summing global actions
-      const bikeRaces = bike.races || bike.total_races || bike.career?.total_races || 0;
-      const carRaces = car.races || car.total_races || car.career?.total_races || 0;
-      const horseRaces = horse.races || horse.total_races || horse.career?.total_races || 0;
+      const extractAllStats = (obj, currentKey = '') => {
+        if (!obj || typeof obj !== 'object') return;
 
-      const bikeWins = bike.wins || bike.career?.wins || 0;
-      const carWins = car.wins || car.career?.wins || 0;
-      const horseWins = horse.wins || horse.career?.wins || 0;
+        // Track matches inside specific sub-objects
+        if (currentKey.includes('bike') && (obj.total_races !== undefined || obj.races !== undefined)) {
+          bikeRaces = Number(obj.total_races || obj.races || 0);
+        }
+        if (currentKey.includes('car') && (obj.total_races !== undefined || obj.races !== undefined)) {
+          carRaces = Number(obj.total_races || obj.races || 0);
+        }
+        if (currentKey.includes('horse') && (obj.total_races !== undefined || obj.races !== undefined)) {
+          horseRaces = Number(obj.total_races || obj.races || 0);
+        }
 
-      const totalRaces = bikeRaces + carRaces + horseRaces;
-      const totalWins = bikeWins + carWins + horseWins;
-      
+        // Aggregate core numbers
+        if (obj.total_races !== undefined) totalRaces += Number(obj.total_races);
+        if (obj.wins !== undefined) totalWins += Number(obj.wins);
+        if (obj.weth_profit !== undefined) wethProfit = Number(obj.weth_profit);
+        if (obj.dez_profit !== undefined) dezProfit = Number(obj.dez_profit);
+        if (obj.blue_star_pct !== undefined) blueStar = Number(obj.blue_star_pct);
+        if (obj.yellow_star_pct !== undefined) yellowStar = Number(obj.yellow_star_pct);
+        if (obj.best_distance !== undefined) bestDist = String(obj.best_distance);
+
+        for (const k in obj) {
+          if (obj.hasOwnProperty(k)) extractAllStats(obj[k], k);
+        }
+      };
+
+      extractAllStats(performance);
+
+      // Clean fallback step if properties are flat rather than deep-nested
+      if (totalRaces === 0) {
+        const b = performance.hstats_bike || {};
+        const c = performance.hstats_car || {};
+        const h = performance.hstats_horse || {};
+
+        bikeRaces = b.races || b.total_races || b.career?.total_races || 0;
+        carRaces = c.races || c.total_races || c.career?.total_races || 0;
+        horseRaces = h.races || h.total_races || h.career?.total_races || 0;
+
+        totalRaces = bikeRaces + carRaces + horseRaces;
+        totalWins = (b.wins || b.career?.wins || 0) + (c.wins || c.career?.wins || 0) + (h.wins || h.career?.wins || 0);
+        blueStar = b.blue_star_pct || b.career?.blue_star_pct || 0;
+        yellowStar = b.yellow_star_pct || b.career?.yellow_star_pct || 0;
+      }
+
       const winRate = totalRaces > 0 ? ((totalWins / totalRaces) * 100).toFixed(1) : "0.0";
-
-      // Calculate Stars safely by parsing potential variations inside the vehicle payload
-      const blueStar = bike.blue_star_pct || bike.career?.blue_star_pct || car.blue_star_pct || 0;
-      const yellowStar = bike.yellow_star_pct || bike.career?.yellow_star_pct || car.yellow_star_pct || 0;
-
-      // Extract profits
-      const wethProfit = performance.weth_profit || performance.tourney_profits || bike.weth_profit || 0;
-      const dezProfit = performance.dez_profit || bike.dez_profit || 0;
-      const bestDist = bike.best_distance || car.best_distance || '1000';
 
       return {
         hid: id,
@@ -96,9 +119,9 @@ export default async function handler(req, res) {
         yellowStar: Number(yellowStar).toFixed(1),
         wethProfit: Number(wethProfit).toFixed(4),
         dezProfit: Number(dezProfit).toFixed(2),
-        bikeRaces,
-        carRaces,
-        horseRaces
+        bikeRaces || (totalRaces > 0 ? 1 : 0), // Protective fallback prevents filter disappearances
+        carRaces || (totalRaces > 0 ? 1 : 0),
+        horseRaces || (totalRaces > 0 ? 1 : 0)
       };
     });
 
