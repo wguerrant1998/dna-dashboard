@@ -142,11 +142,13 @@ export default async function handler(req, res) {
       }
     }
 
-    // 3. Fetch full race-by-race history for the vault (paginated) and bucket each
-    //    core's results by field size (rgate = total competitors in that race), grouped
-    //    into fixed buckets: "2", "3", "4", "5", "6", "7+".
-    //    fieldSizeByMode[mode][hid][bucket] = { races_n, win_n }
-    const fieldSizeByMode = { bike: {}, car: {}, horse: {} };
+    // 3. Fetch full race-by-race history for the vault (paginated) and build a compact
+    //    raw race list per core+mode. Each entry carries distance (cb*100), field size
+    //    (rgate, bucketed), and race type (raw format/payout values) TOGETHER, so the
+    //    dashboard can filter by any combination of these and compute real intersected
+    //    stats - rather than three separate pre-aggregated slices that can't combine.
+    //    rawRacesByMode[mode][hid] = [{ distance, fieldSizeBucket, format, payout, win }]
+    const rawRacesByMode = { bike: {}, car: {}, horse: {} };
     const FIELD_SIZE_BUCKETS = ["2", "3", "4", "5", "6", "7+"];
 
     function fieldSizeBucket(rgate) {
@@ -170,7 +172,7 @@ export default async function handler(req, res) {
       }
 
       const raceData = await raceRes.json();
-      const races = raceData?.result;
+      const races = raceData?.result?.races;
 
       if (!Array.isArray(races) || races.length === 0) break; // no more pages
 
@@ -179,13 +181,17 @@ export default async function handler(req, res) {
         const mode = rec?.rvmode;
         const hid = rec?.hid;
         const bucket = fieldSizeBucket(rec?.rgate);
-        if (!mode || !fieldSizeByMode[mode] || hid == null || !bucket) continue;
+        const distance = rec?.cb != null && !isNaN(Number(rec.cb)) ? Number(rec.cb) * 100 : null;
+        if (!mode || !rawRacesByMode[mode] || hid == null) continue;
 
-        if (!fieldSizeByMode[mode][hid]) fieldSizeByMode[mode][hid] = {};
-        if (!fieldSizeByMode[mode][hid][bucket]) fieldSizeByMode[mode][hid][bucket] = { races_n: 0, win_n: 0 };
-
-        fieldSizeByMode[mode][hid][bucket].races_n += 1;
-        if (rec.pos === 1) fieldSizeByMode[mode][hid][bucket].win_n += 1; // assumes pos 1 = win
+        if (!rawRacesByMode[mode][hid]) rawRacesByMode[mode][hid] = [];
+        rawRacesByMode[mode][hid].push({
+          distance,
+          fieldSizeBucket: bucket,
+          format: rec?.format ?? null,
+          payout: rec?.payout ?? null,
+          win: rec.pos === 1, // assumes pos 1 = win
+        });
       }
 
       if (races.length < 1) break; // extra guard in case page size is 1
@@ -238,18 +244,6 @@ export default async function handler(req, res) {
       for (const mode of RVMODES) {
         const real = statsByMode[mode][hid];
 
-        // Always emit all 6 fixed buckets (even if zero races) so the dashboard's
-        // field-size buttons are consistent regardless of what this core has raced.
-        const rawFieldSize = fieldSizeByMode[mode][hid] || {};
-        const fieldSize = {};
-        for (const bucket of FIELD_SIZE_BUCKETS) {
-          const b = rawFieldSize[bucket];
-          fieldSize[bucket] = {
-            r: b?.races_n ?? 0,
-            w: b && b.races_n > 0 ? Number(((b.win_n / b.races_n) * 100).toFixed(2)) : 0,
-          };
-        }
-
         modes[mode] = {
           class: className,
           element,
@@ -262,9 +256,10 @@ export default async function handler(req, res) {
           raceTypes: real?.raceTypes ?? {},
           // Per-distance breakdown, keyed by distance in meters (900, 1000, ... 2300).
           distances: real?.distances ?? {},
-          // Per-field-size breakdown, keyed by rgate (e.g. "3", "4", "5" competitors).
-          // Built from actual individual race results, not estimated.
-          fieldSize,
+          // Raw individual race list - each entry has distance, field size bucket, and
+          // race type together, so the dashboard can compute stats for ANY combination
+          // of these filters selected at once, not just one at a time.
+          races: rawRacesByMode[mode][hid] ?? [],
           // Power / Variance / Adj. Odds ratings from the powcard endpoint (0-100 scale).
           // null if this core has no powcard data for this mode.
           power: powCardByHid[hid]?.[mode]?.power ?? null,
