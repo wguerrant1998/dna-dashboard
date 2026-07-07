@@ -3,7 +3,7 @@ export default async function handler(req, res) {
   const VAULT_ADDRESS = "0x1a1d4c5c255635a796ad6f64d16431acb2d37c90";
   const RVMODES = ["bike", "car", "horse"];
   const STATS_CHUNK_SIZE = 50; // untested upper bound - lower this if the API rejects large batches
-  const MAX_RACE_RESULT_PAGES = 200; // safety cap so a bug in pagination can't loop forever
+  const MAX_RACE_RESULT_PAGES = 2000; // raised from 200 - was truncating multi-year history
 
   // Race-type keys as they appear in the API's `payouts_data` object,
   // mapped to the labels used in the dashboard's race-type buttons.
@@ -158,6 +158,8 @@ export default async function handler(req, res) {
     }
 
     let raceResultsFetched = 0;
+    let pagesFetched = 0;
+    let hitPageCap = true;
 
     for (let page = 0; page < MAX_RACE_RESULT_PAGES; page++) {
       const raceRes = await fetch("https://api.dnaracing.run/fbike/vault/raceresults", {
@@ -168,13 +170,18 @@ export default async function handler(req, res) {
 
       if (!raceRes.ok) {
         console.error(`raceresults fetch failed on page ${page}: status ${raceRes.status}`);
+        hitPageCap = false;
         break;
       }
 
       const raceData = await raceRes.json();
       const races = raceData?.result?.races;
+      pagesFetched++;
 
-      if (!Array.isArray(races) || races.length === 0) break; // no more pages
+      if (!Array.isArray(races) || races.length === 0) {
+        hitPageCap = false;
+        break; // no more pages - reached the natural end of history
+      }
 
       for (const rec of races) {
         raceResultsFetched++;
@@ -193,46 +200,83 @@ export default async function handler(req, res) {
           win: rec.pos === 1, // assumes pos 1 = win
         });
       }
-
-      if (races.length < 1) break; // extra guard in case page size is 1
     }
 
-    console.log(`raceresults: fetched ${raceResultsFetched} individual race records for vault ${VAULT_ADDRESS}`);
+    console.log(
+      `raceresults: fetched ${raceResultsFetched} individual race records across ${pagesFetched} pages for vault ${VAULT_ADDRESS}` +
+      (hitPageCap ? ` — WARNING: hit MAX_RACE_RESULT_PAGES cap (${MAX_RACE_RESULT_PAGES}), history may still be truncated. Raise the cap further.` : ` (reached natural end of history)`)
+    );
 
     // 4. Fetch Power/Variance/Adj. Odds ("powcard") per core. This endpoint only accepts
     //    one hid per call, so we run these with limited concurrency rather than one at a time.
+    //    Retries on failure since intermittent/rate-limited failures were causing ~half of
+    //    cores to come back with no PWR/VAR/ADJ data.
     //    powCardByHid[hid][mode] = { power, variance, adjodds }
-    const POWCARD_CONCURRENCY = 10; // untested - lower this if the API starts rejecting/rate-limiting
+    const POWCARD_CONCURRENCY = 6; // lowered from 10 to reduce rate-limit pressure
+    const POWCARD_MAX_RETRIES = 3;
+    const POWCARD_RETRY_BASE_DELAY_MS = 400;
     const powCardByHid = {};
+    let powcardSucceeded = 0;
+    let powcardFailed = 0;
+    const powcardFailureStatusCounts = {};
+
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     await runWithConcurrency(hids, POWCARD_CONCURRENCY, async (hid) => {
-      try {
-        const powRes = await fetch("https://api.dnaracing.run/fbike/i/powcard", {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ hid }),
-        });
+      for (let attempt = 0; attempt <= POWCARD_MAX_RETRIES; attempt++) {
+        try {
+          const powRes = await fetch("https://api.dnaracing.run/fbike/i/powcard", {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ hid }),
+          });
 
-        if (!powRes.ok) return;
+          if (!powRes.ok) {
+            const statusKey = String(powRes.status);
+            powcardFailureStatusCounts[statusKey] = (powcardFailureStatusCounts[statusKey] || 0) + 1;
+            if (attempt < POWCARD_MAX_RETRIES) {
+              await sleep(POWCARD_RETRY_BASE_DELAY_MS * (attempt + 1)); // simple linear backoff
+              continue;
+            }
+            powcardFailed++;
+            return;
+          }
 
-        const powData = await powRes.json();
-        const powerByMode = powData?.result?.power;
-        if (!powerByMode) return;
+          const powData = await powRes.json();
+          const powerByMode = powData?.result?.power;
+          if (!powerByMode) {
+            powcardFailed++;
+            return;
+          }
 
-        powCardByHid[hid] = {};
-        for (const mode of RVMODES) {
-          const m = powerByMode[mode];
-          if (!m) continue;
-          powCardByHid[hid][mode] = {
-            power: m?.power?.fill?.per ?? null,
-            variance: m?.variance?.fill?.per ?? null,
-            adjodds: m?.adjodds?.fill?.per ?? null,
-          };
+          powCardByHid[hid] = {};
+          for (const mode of RVMODES) {
+            const m = powerByMode[mode];
+            if (!m) continue;
+            powCardByHid[hid][mode] = {
+              power: m?.power?.fill?.per ?? null,
+              variance: m?.variance?.fill?.per ?? null,
+              adjodds: m?.adjodds?.fill?.per ?? null,
+            };
+          }
+          powcardSucceeded++;
+          return;
+        } catch (err) {
+          if (attempt < POWCARD_MAX_RETRIES) {
+            await sleep(POWCARD_RETRY_BASE_DELAY_MS * (attempt + 1));
+            continue;
+          }
+          console.error(`powcard fetch failed for hid ${hid} after ${POWCARD_MAX_RETRIES + 1} attempts:`, err);
+          powcardFailed++;
+          return;
         }
-      } catch (err) {
-        console.error(`powcard fetch failed for hid ${hid}:`, err);
       }
     });
+
+    console.log(
+      `powcard: ${powcardSucceeded} succeeded, ${powcardFailed} failed (out of ${hids.length}).` +
+      (powcardFailed > 0 ? ` Failure status codes: ${JSON.stringify(powcardFailureStatusCounts)}` : "")
+    );
 
     // 5. Join vault metadata with real per-mode stats. No random/simulated values anywhere.
     const structuredCores = cores.map((c) => {
