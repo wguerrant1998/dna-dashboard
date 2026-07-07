@@ -1,9 +1,9 @@
 export default async function handler(req, res) {
   const API_KEY = process.env.DNA_API_KEY; 
-  const VAULT_ADDRESS = "0x1a1d4c5c255635a796ad6f64d16431acb2d37c90"; 
+  const TEST_ID = 17851; // Inspecting one of your real vault IDs
 
   try {
-    const response = await fetch(`https://api.dnaracing.run/fbike/pub/v1/vault/${VAULT_ADDRESS}/cores`, {
+    const response = await fetch(`https://api.dnaracing.run/fbike/pub/v1/market/cores/${TEST_ID}`, {
       headers: { 
         "Authorization": `Bearer ${API_KEY}`,
         "Accept": "application/json"
@@ -13,15 +13,14 @@ export default async function handler(req, res) {
     const status = response.status;
     const rawData = await response.json();
     
-    // We send back the absolute raw, unfiltered reality of what the API says
     return res.status(200).json({
+      testId: TEST_ID,
       apiConnectionStatus: status,
-      apiKeyLength: API_KEY ? API_KEY.length : 0,
-      dnaApiResponse: rawData
+      dnaCoreMetadataResponse: rawData
     });
   } catch (error) {
     return res.status(500).json({ 
-      error: "Could not establish network connection to DNA Racing server", 
+      error: "Could not fetch specific core metadata", 
       message: error.message 
     });
   }
