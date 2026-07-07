@@ -8,7 +8,12 @@ export default async function handler(req, res) {
     // head() throws if the blob doesn't exist yet (e.g. refresh-cores hasn't run once yet).
     const meta = await head(CACHE_KEY);
 
-    const cacheRes = await fetch(meta.url);
+    const cacheRes = await fetch(meta.url, {
+      headers: {
+        // Private-access blobs require the token to read, not just to write.
+        Authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`,
+      },
+    });
     if (!cacheRes.ok) {
       return res.status(502).json({ error: "Failed to read cached core data", updatedAt: null, cores: [] });
     }
