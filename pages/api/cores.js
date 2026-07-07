@@ -100,12 +100,28 @@ export default async function handler(req, res) {
             };
           }
 
+          // Per-distance breakdown: doc.data has keys "9" through "23", each meaning
+          // that key * 100 meters (e.g. "9" = 900m, "23" = 2300m).
+          const distances = {};
+          for (const [key, bucket] of Object.entries(doc?.data || {})) {
+            if (key === "career") continue;
+            const distanceMeters = Number(key) * 100;
+            if (isNaN(distanceMeters) || !bucket) continue;
+            distances[distanceMeters] = {
+              r: bucket.races_n ?? 0,
+              w: bucket.win_p != null ? Number((bucket.win_p * 100).toFixed(2)) : 0,
+              b: bucket.bluestar_p != null ? Number((bucket.bluestar_p * 100).toFixed(2)) : 0,
+              y: bucket.yellowstar_p != null ? Number((bucket.yellowstar_p * 100).toFixed(2)) : 0,
+            };
+          }
+
           statsByMode[mode][doc.hid] = {
             r: career.races_n ?? 0,
             w: career.win_p != null ? Number((career.win_p * 100).toFixed(2)) : 0,
             b: career.bluestar_p != null ? Number((career.bluestar_p * 100).toFixed(2)) : 0,
             y: career.yellowstar_p != null ? Number((career.yellowstar_p * 100).toFixed(2)) : 0,
             raceTypes,
+            distances,
           };
         }
       }
@@ -176,6 +192,8 @@ export default async function handler(req, res) {
           // Per-race-type career breakdown (WTA, 1v1, Top 2, Double Up, Spin & Go, etc.),
           // keyed by the raw API key so the dashboard can look up whichever type is selected.
           raceTypes: real?.raceTypes ?? {},
+          // Per-distance breakdown, keyed by distance in meters (900, 1000, ... 2300).
+          distances: real?.distances ?? {},
           // Per-field-size breakdown, keyed by rgate (e.g. "3", "4", "5" competitors).
           // Built from actual individual race results, not estimated.
           fieldSize,
