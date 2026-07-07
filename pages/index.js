@@ -17,14 +17,25 @@ export default function MultiModeDashboard() {
   const [sortKey, setSortKey] = useState(null); // 'r' | 'w' | 'b' | 'y'
   const [sortDir, setSortDir] = useState('desc'); // 'asc' | 'desc'
 
-  // Race Type State: 'career' (overall) or a payouts_data key like 'wta', '1v1', 'top2', 'dblup', 'spin_n_go'
-  const [activeRaceType, setActiveRaceType] = useState('career');
+  // Race Type State: which raw `format` values are toggled on (empty set = no filter / all races)
+  const [activeRaceTypes, setActiveRaceTypes] = useState(new Set());
 
-  // Field Size (Gate Number) State: 'all' or a specific rgate value like '3', '4', '5'
-  const [activeFieldSize, setActiveFieldSize] = useState('all');
+  // Field Size State: which fixed buckets are toggled on (empty set = no filter / all sizes)
+  const [activeFieldSizes, setActiveFieldSizes] = useState(new Set());
 
-  // Race Distance State: 'all' or a specific distance in meters, e.g. 900, 1000, ... 2300
-  const [activeDistance, setActiveDistance] = useState('all');
+  // Race Distance State: which distances (meters) are toggled on (empty set = no filter / all distances)
+  const [activeDistances, setActiveDistances] = useState(new Set());
+
+  const toggleInSet = (setter) => (value) => {
+    setter(prev => {
+      const next = new Set(prev);
+      next.has(value) ? next.delete(value) : next.add(value);
+      return next;
+    });
+  };
+  const toggleRaceType = toggleInSet(setActiveRaceTypes);
+  const toggleFieldSize = toggleInSet(setActiveFieldSizes);
+  const toggleDistance = toggleInSet(setActiveDistances);
 
   useEffect(() => {
     fetch('/api/cores')
@@ -47,46 +58,52 @@ export default function MultiModeDashboard() {
   const ELEMENTS = ['All', 'Metal', 'Fire', 'Earth', 'Water'];
   const CLASSES = ['All', 'Genesis', 'Morph', 'Freak', 'X-Class'];
 
-  // Race type buttons: 'career' shows overall stats, others pull from modes[mode].raceTypes[key]
-  const RACE_TYPES = [
-    { key: 'career', label: 'All Races' },
-    { key: 'wta', label: 'WTA' },
-    { key: '1v1', label: '1v1' },
-    { key: 'top2', label: 'Top 2' },
-    { key: 'top3', label: 'Top 3' },
-    { key: 'dblup', label: 'Double Up' },
-    { key: 'spin_n_go', label: 'Spin & Go' },
-  ];
+  // Distinct raw race-type values (`format` field) actually present in the data for the
+  // active mode. Labels are just the raw value title-cased with underscores as spaces,
+  // since we don't have a confirmed mapping from raw values to friendly names like "WTA" -
+  // better to show the truth than guess wrong. Rename these once the mapping is confirmed.
+  const availableRaceTypes = Array.from(
+    new Set(
+      cores.flatMap((core) => (core.modes[activeMode]?.races || []).map(r => r.format).filter(Boolean))
+    )
+  ).sort();
 
-  // Resolves the right stats block for a core based on the active mode, plus whichever single
-  // breakdown is selected (field size, distance, or race type). These are separate breakdowns
-  // in the data with no combined intersection available, so only one applies at a time -
-  // selecting one resets the others (see the button onClick handlers below).
-  // Falls back to zeroed stats if a core has no data for that slice (real absence, not simulated).
+  const formatLabel = (raw) => raw.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+  // Resolves the right stats block for a core based on the active mode plus whichever
+  // combination of field size / distance / race type buttons are toggled on. All active
+  // selections are combined together (AND across categories, OR within a category) by
+  // filtering this core's raw individual race list - so any combination is real, computed
+  // stats, never estimated. If nothing is toggled on, falls back to full career stats
+  // (which includes blue/yellow star info that isn't tracked per individual race).
   const getStatsFor = (core) => {
     const modeData = core.modes[activeMode];
     const powerRatings = { power: modeData.power, variance: modeData.variance, adjodds: modeData.adjodds };
+    const hasFilters = activeFieldSizes.size > 0 || activeDistances.size > 0 || activeRaceTypes.size > 0;
 
-    if (activeFieldSize !== 'all') {
-      const fs = modeData.fieldSize?.[activeFieldSize];
-      return fs
-        ? { r: fs.r, w: fs.w, b: null, y: null, element: modeData.element, class: modeData.class, ...powerRatings }
-        : { r: 0, w: 0, b: null, y: null, element: modeData.element, class: modeData.class, ...powerRatings };
-    }
+    if (!hasFilters) return { ...modeData, ...powerRatings };
 
-    if (activeDistance !== 'all') {
-      const d = modeData.distances?.[activeDistance];
-      return d
-        ? { ...d, element: modeData.element, class: modeData.class, ...powerRatings }
-        : { r: 0, w: 0, b: 0, y: 0, element: modeData.element, class: modeData.class, ...powerRatings };
-    }
+    const races = modeData.races || [];
+    const matched = races.filter(r => {
+      if (activeFieldSizes.size > 0 && !activeFieldSizes.has(r.fieldSizeBucket)) return false;
+      if (activeDistances.size > 0 && !activeDistances.has(r.distance)) return false;
+      if (activeRaceTypes.size > 0 && !activeRaceTypes.has(r.format)) return false;
+      return true;
+    });
 
-    if (activeRaceType === 'career') return modeData;
+    const races_n = matched.length;
+    const win_n = matched.filter(r => r.win).length;
+    const win_p = races_n > 0 ? Number(((win_n / races_n) * 100).toFixed(2)) : 0;
 
-    const rt = modeData.raceTypes?.[activeRaceType];
-    return rt
-      ? { ...rt, element: modeData.element, class: modeData.class, ...powerRatings }
-      : { r: 0, w: 0, b: 0, y: 0, element: modeData.element, class: modeData.class, ...powerRatings };
+    return {
+      r: races_n,
+      w: win_p,
+      b: null, // not tracked per individual race
+      y: null, // not tracked per individual race
+      element: modeData.element,
+      class: modeData.class,
+      ...powerRatings,
+    };
   };
 
   // Fixed field-size buckets - always shown regardless of what's in the data,
@@ -100,13 +117,13 @@ export default function MultiModeDashboard() {
     { key: '7+', label: '7+ Cores' },
   ];
 
-  // Distinct distances (in meters) actually present in the data for the active mode,
+  // Distinct distances (in meters) actually present in the raw race data for the active mode,
   // sorted numerically - only shows distances your cores have actually raced at.
   const availableDistances = Array.from(
     new Set(
-      cores.flatMap((core) => Object.keys(core.modes[activeMode]?.distances || {}))
+      cores.flatMap((core) => (core.modes[activeMode]?.races || []).map(r => r.distance).filter(d => d != null))
     )
-  ).sort((a, b) => Number(a) - Number(b));
+  ).sort((a, b) => a - b);
 
   const filterButtonStyle = (isActive) => ({
     padding: '8px 16px',
@@ -181,9 +198,13 @@ export default function MultiModeDashboard() {
         <h2>DNA Racing Collection Matrix</h2>
         <p style={{ color: '#64748b', marginBottom: '30px' }}>
           Total Vault: {cores.length} Cores Loaded Dynamically
-          {activeFieldSize !== 'all' && <> — showing <strong>{FIELD_SIZE_BUCKETS.find(b => b.key === activeFieldSize)?.label}</strong> stats</>}
-          {activeFieldSize === 'all' && activeDistance !== 'all' && <> — showing <strong>{activeDistance}m</strong> stats</>}
-          {activeFieldSize === 'all' && activeDistance === 'all' && activeRaceType !== 'career' && <> — showing <strong>{RACE_TYPES.find(rt => rt.key === activeRaceType)?.label}</strong> stats</>}
+          {(activeFieldSizes.size > 0 || activeDistances.size > 0 || activeRaceTypes.size > 0) && (
+            <> — filtered by
+              {activeFieldSizes.size > 0 && <> <strong>{Array.from(activeFieldSizes).map(k => FIELD_SIZE_BUCKETS.find(b => b.key === k)?.label).join(', ')}</strong></>}
+              {activeDistances.size > 0 && <> <strong>{Array.from(activeDistances).map(d => `${d}m`).join(', ')}</strong></>}
+              {activeRaceTypes.size > 0 && <> <strong>{Array.from(activeRaceTypes).map(formatLabel).join(', ')}</strong></>}
+            </>
+          )}
         </p>
 
         {/* TOP LEVEL MODE SELECTOR TABS */}
@@ -209,15 +230,8 @@ export default function MultiModeDashboard() {
           <div style={{ marginBottom: '14px' }}>
             <div style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px' }}>Field Size (Cores in Race)</div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              <button style={filterButtonStyle(activeFieldSize === 'all')} onClick={() => setActiveFieldSize('all')}>
-                All Sizes
-              </button>
               {FIELD_SIZE_BUCKETS.map(({ key, label }) => (
-                <button
-                  key={key}
-                  style={filterButtonStyle(activeFieldSize === key)}
-                  onClick={() => { setActiveFieldSize(key); setActiveDistance('all'); setActiveRaceType('career'); }}
-                >
+                <button key={key} style={filterButtonStyle(activeFieldSizes.has(key))} onClick={() => toggleFieldSize(key)}>
                   {label}
                 </button>
               ))}
@@ -227,15 +241,8 @@ export default function MultiModeDashboard() {
           <div style={{ marginBottom: '14px' }}>
             <div style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px' }}>Race Distance</div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              <button style={filterButtonStyle(activeDistance === 'all')} onClick={() => setActiveDistance('all')}>
-                All Distances
-              </button>
               {availableDistances.map((dist) => (
-                <button
-                  key={dist}
-                  style={filterButtonStyle(activeDistance === dist)}
-                  onClick={() => { setActiveDistance(dist); setActiveFieldSize('all'); setActiveRaceType('career'); }}
-                >
+                <button key={dist} style={filterButtonStyle(activeDistances.has(dist))} onClick={() => toggleDistance(dist)}>
                   {dist}m
                 </button>
               ))}
@@ -265,19 +272,28 @@ export default function MultiModeDashboard() {
           </div>
 
           <div style={{ marginTop: '14px' }}>
-            <div style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px' }}>Race Type</div>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px' }}>
+              Race Type <span style={{ textTransform: 'none', fontWeight: '400', color: '#cbd5e1' }}>(raw values - unconfirmed labels)</span>
+            </div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {RACE_TYPES.map((rt) => (
-                <button
-                  key={rt.key}
-                  style={filterButtonStyle(activeRaceType === rt.key)}
-                  onClick={() => { setActiveRaceType(rt.key); setActiveFieldSize('all'); setActiveDistance('all'); }}
-                >
-                  {rt.label}
+              {availableRaceTypes.map((rt) => (
+                <button key={rt} style={filterButtonStyle(activeRaceTypes.has(rt))} onClick={() => toggleRaceType(rt)}>
+                  {formatLabel(rt)}
                 </button>
               ))}
             </div>
           </div>
+
+          {(activeFieldSizes.size > 0 || activeDistances.size > 0 || activeRaceTypes.size > 0) && (
+            <div style={{ marginTop: '14px' }}>
+              <button
+                style={{ ...filterButtonStyle(false), borderColor: '#f87171', color: '#dc2626' }}
+                onClick={() => { setActiveFieldSizes(new Set()); setActiveDistances(new Set()); setActiveRaceTypes(new Set()); }}
+              >
+                Clear All Filters
+              </button>
+            </div>
+          )}
         </div>
 
         {/* TRACK DATA METRIC GRID */}
