@@ -31,6 +31,8 @@ export default async function handler(req, res) {
     return out;
   }
 
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
   // Runs async tasks with a max concurrency limit, since powcard only accepts one hid per call.
   async function runWithConcurrency(items, limit, worker) {
     const results = new Array(items.length);
@@ -86,11 +88,22 @@ export default async function handler(req, res) {
       const batches = chunk(hids, STATS_CHUNK_SIZE);
 
       for (const batch of batches) {
-        const statsRes = await fetch("https://api.dnaracing.run/fbike/cores/hstats_doc_bulk", {
+        let statsRes = await fetch("https://api.dnaracing.run/fbike/cores/hstats_doc_bulk", {
           method: "POST",
           headers: authHeaders(),
           body: JSON.stringify({ hids: batch, rvmode: mode }),
         });
+
+        // Retry once on rate limit before giving up on this batch
+        if (statsRes.status === 429) {
+          console.warn(`hstats_doc_bulk rate limited (mode ${mode}), retrying once after backoff`);
+          await sleep(800);
+          statsRes = await fetch("https://api.dnaracing.run/fbike/cores/hstats_doc_bulk", {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ hids: batch, rvmode: mode }),
+          });
+        }
 
         if (!statsRes.ok) continue; // skip this batch rather than fail the whole request
 
@@ -139,6 +152,8 @@ export default async function handler(req, res) {
             distances,
           };
         }
+
+        await sleep(120); // small pacing delay between batches
       }
     }
 
@@ -160,22 +175,45 @@ export default async function handler(req, res) {
     let raceResultsFetched = 0;
     let pagesFetched = 0;
     let hitPageCap = true;
+    const RACERESULTS_MAX_RETRIES = 4;
+    const RACERESULTS_RETRY_BASE_DELAY_MS = 800;
+    const RACERESULTS_PAGE_PAUSE_MS = 150; // small pacing delay between pages to avoid tripping rate limits
 
     for (let page = 0; page < MAX_RACE_RESULT_PAGES; page++) {
-      const raceRes = await fetch("https://api.dnaracing.run/fbike/vault/raceresults", {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({ vault: VAULT_ADDRESS, page }),
-      });
+      let races = null;
+      let gaveUpOnPage = false;
 
-      if (!raceRes.ok) {
-        console.error(`raceresults fetch failed on page ${page}: status ${raceRes.status}`);
+      for (let attempt = 0; attempt <= RACERESULTS_MAX_RETRIES; attempt++) {
+        const raceRes = await fetch("https://api.dnaracing.run/fbike/vault/raceresults", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ vault: VAULT_ADDRESS, page }),
+        });
+
+        if (raceRes.ok) {
+          const raceData = await raceRes.json();
+          races = raceData?.result?.races;
+          break;
+        }
+
+        // Rate limited or transient error - back off and retry this same page rather than
+        // abandoning all remaining pagination (a single 429 used to wipe out everything).
+        if (attempt < RACERESULTS_MAX_RETRIES) {
+          const delay = RACERESULTS_RETRY_BASE_DELAY_MS * Math.pow(2, attempt); // exponential backoff
+          console.warn(`raceresults page ${page} got status ${raceRes.status}, retrying in ${delay}ms (attempt ${attempt + 1}/${RACERESULTS_MAX_RETRIES})`);
+          await sleep(delay);
+        } else {
+          console.error(`raceresults page ${page} failed permanently after ${RACERESULTS_MAX_RETRIES + 1} attempts: status ${raceRes.status}`);
+          gaveUpOnPage = true;
+        }
+      }
+
+      if (gaveUpOnPage) {
+        // Stop pagination here, but keep everything collected from earlier pages.
         hitPageCap = false;
         break;
       }
 
-      const raceData = await raceRes.json();
-      const races = raceData?.result?.races;
       pagesFetched++;
 
       if (!Array.isArray(races) || races.length === 0) {
@@ -200,11 +238,13 @@ export default async function handler(req, res) {
           win: rec.pos === 1, // assumes pos 1 = win
         });
       }
+
+      await sleep(RACERESULTS_PAGE_PAUSE_MS); // pace requests instead of bursting
     }
 
     console.log(
       `raceresults: fetched ${raceResultsFetched} individual race records across ${pagesFetched} pages for vault ${VAULT_ADDRESS}` +
-      (hitPageCap ? ` — WARNING: hit MAX_RACE_RESULT_PAGES cap (${MAX_RACE_RESULT_PAGES}), history may still be truncated. Raise the cap further.` : ` (reached natural end of history)`)
+      (hitPageCap ? ` — WARNING: hit MAX_RACE_RESULT_PAGES cap (${MAX_RACE_RESULT_PAGES}), history may still be truncated. Raise the cap further.` : ` (stopped: natural end of history or persistent errors after retries)`)
     );
 
     // 4. Fetch Power/Variance/Adj. Odds ("powcard") per core. This endpoint only accepts
@@ -212,15 +252,13 @@ export default async function handler(req, res) {
     //    Retries on failure since intermittent/rate-limited failures were causing ~half of
     //    cores to come back with no PWR/VAR/ADJ data.
     //    powCardByHid[hid][mode] = { power, variance, adjodds }
-    const POWCARD_CONCURRENCY = 6; // lowered from 10 to reduce rate-limit pressure
-    const POWCARD_MAX_RETRIES = 3;
-    const POWCARD_RETRY_BASE_DELAY_MS = 400;
+    const POWCARD_CONCURRENCY = 4; // lowered further after confirming real rate limiting (429s)
+    const POWCARD_MAX_RETRIES = 4;
+    const POWCARD_RETRY_BASE_DELAY_MS = 600;
     const powCardByHid = {};
     let powcardSucceeded = 0;
     let powcardFailed = 0;
     const powcardFailureStatusCounts = {};
-
-    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     await runWithConcurrency(hids, POWCARD_CONCURRENCY, async (hid) => {
       for (let attempt = 0; attempt <= POWCARD_MAX_RETRIES; attempt++) {
@@ -235,7 +273,7 @@ export default async function handler(req, res) {
             const statusKey = String(powRes.status);
             powcardFailureStatusCounts[statusKey] = (powcardFailureStatusCounts[statusKey] || 0) + 1;
             if (attempt < POWCARD_MAX_RETRIES) {
-              await sleep(POWCARD_RETRY_BASE_DELAY_MS * (attempt + 1)); // simple linear backoff
+              await sleep(POWCARD_RETRY_BASE_DELAY_MS * Math.pow(2, attempt)); // exponential backoff
               continue;
             }
             powcardFailed++;
@@ -263,7 +301,7 @@ export default async function handler(req, res) {
           return;
         } catch (err) {
           if (attempt < POWCARD_MAX_RETRIES) {
-            await sleep(POWCARD_RETRY_BASE_DELAY_MS * (attempt + 1));
+            await sleep(POWCARD_RETRY_BASE_DELAY_MS * Math.pow(2, attempt));
             continue;
           }
           console.error(`powcard fetch failed for hid ${hid} after ${POWCARD_MAX_RETRIES + 1} attempts:`, err);
