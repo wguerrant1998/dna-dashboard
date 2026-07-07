@@ -31,6 +31,21 @@ export default async function handler(req, res) {
     return out;
   }
 
+  // Runs async tasks with a max concurrency limit, since powcard only accepts one hid per call.
+  async function runWithConcurrency(items, limit, worker) {
+    const results = new Array(items.length);
+    let index = 0;
+    async function next() {
+      while (index < items.length) {
+        const current = index++;
+        results[current] = await worker(items[current]);
+      }
+    }
+    const workers = Array.from({ length: Math.min(limit, items.length) }, next);
+    await Promise.all(workers);
+    return results;
+  }
+
   function titleCase(str) {
     if (!str) return null;
     return str.charAt(0).toUpperCase() + str.slice(1);
@@ -128,9 +143,19 @@ export default async function handler(req, res) {
     }
 
     // 3. Fetch full race-by-race history for the vault (paginated) and bucket each
-    //    core's results by field size (rgate = total competitors in that race).
-    //    fieldSizeByMode[mode][hid][rgate] = { races_n, win_n }
+    //    core's results by field size (rgate = total competitors in that race), grouped
+    //    into fixed buckets: "2", "3", "4", "5", "6", "7+".
+    //    fieldSizeByMode[mode][hid][bucket] = { races_n, win_n }
     const fieldSizeByMode = { bike: {}, car: {}, horse: {} };
+    const FIELD_SIZE_BUCKETS = ["2", "3", "4", "5", "6", "7+"];
+
+    function fieldSizeBucket(rgate) {
+      const n = Number(rgate);
+      if (isNaN(n) || n < 2) return null;
+      return n >= 7 ? "7+" : String(n);
+    }
+
+    let raceResultsFetched = 0;
 
     for (let page = 0; page < MAX_RACE_RESULT_PAGES; page++) {
       const raceRes = await fetch("https://api.dnaracing.run/fbike/vault/raceresults", {
@@ -139,7 +164,10 @@ export default async function handler(req, res) {
         body: JSON.stringify({ vault: VAULT_ADDRESS, page }),
       });
 
-      if (!raceRes.ok) break;
+      if (!raceRes.ok) {
+        console.error(`raceresults fetch failed on page ${page}: status ${raceRes.status}`);
+        break;
+      }
 
       const raceData = await raceRes.json();
       const races = raceData?.result;
@@ -147,22 +175,60 @@ export default async function handler(req, res) {
       if (!Array.isArray(races) || races.length === 0) break; // no more pages
 
       for (const rec of races) {
+        raceResultsFetched++;
         const mode = rec?.rvmode;
         const hid = rec?.hid;
-        const rgate = rec?.rgate;
-        if (!mode || !fieldSizeByMode[mode] || hid == null || rgate == null) continue;
+        const bucket = fieldSizeBucket(rec?.rgate);
+        if (!mode || !fieldSizeByMode[mode] || hid == null || !bucket) continue;
 
         if (!fieldSizeByMode[mode][hid]) fieldSizeByMode[mode][hid] = {};
-        if (!fieldSizeByMode[mode][hid][rgate]) fieldSizeByMode[mode][hid][rgate] = { races_n: 0, win_n: 0 };
+        if (!fieldSizeByMode[mode][hid][bucket]) fieldSizeByMode[mode][hid][bucket] = { races_n: 0, win_n: 0 };
 
-        fieldSizeByMode[mode][hid][rgate].races_n += 1;
-        if (rec.pos === 1) fieldSizeByMode[mode][hid][rgate].win_n += 1; // assumes pos 1 = win
+        fieldSizeByMode[mode][hid][bucket].races_n += 1;
+        if (rec.pos === 1) fieldSizeByMode[mode][hid][bucket].win_n += 1; // assumes pos 1 = win
       }
 
       if (races.length < 1) break; // extra guard in case page size is 1
     }
 
-    // 4. Join vault metadata with real per-mode stats. No random/simulated values anywhere.
+    console.log(`raceresults: fetched ${raceResultsFetched} individual race records for vault ${VAULT_ADDRESS}`);
+
+    // 4. Fetch Power/Variance/Adj. Odds ("powcard") per core. This endpoint only accepts
+    //    one hid per call, so we run these with limited concurrency rather than one at a time.
+    //    powCardByHid[hid][mode] = { power, variance, adjodds }
+    const POWCARD_CONCURRENCY = 10; // untested - lower this if the API starts rejecting/rate-limiting
+    const powCardByHid = {};
+
+    await runWithConcurrency(hids, POWCARD_CONCURRENCY, async (hid) => {
+      try {
+        const powRes = await fetch("https://api.dnaracing.run/fbike/i/powcard", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ hid }),
+        });
+
+        if (!powRes.ok) return;
+
+        const powData = await powRes.json();
+        const powerByMode = powData?.result?.power;
+        if (!powerByMode) return;
+
+        powCardByHid[hid] = {};
+        for (const mode of RVMODES) {
+          const m = powerByMode[mode];
+          if (!m) continue;
+          powCardByHid[hid][mode] = {
+            power: m?.power?.fill?.per ?? null,
+            variance: m?.variance?.fill?.per ?? null,
+            adjodds: m?.adjodds?.fill?.per ?? null,
+          };
+        }
+      } catch (err) {
+        console.error(`powcard fetch failed for hid ${hid}:`, err);
+      }
+    });
+
+    // 5. Join vault metadata with real per-mode stats. No random/simulated values anywhere.
     const structuredCores = cores.map((c) => {
       const hid = Number(c.hid);
       const className = CLASS_NAME_MAP[c.type] || c.type || null;
@@ -172,13 +238,15 @@ export default async function handler(req, res) {
       for (const mode of RVMODES) {
         const real = statsByMode[mode][hid];
 
-        // Convert { races_n, win_n } buckets per rgate into { races_n, win_n, win_p } for the frontend
+        // Always emit all 6 fixed buckets (even if zero races) so the dashboard's
+        // field-size buttons are consistent regardless of what this core has raced.
         const rawFieldSize = fieldSizeByMode[mode][hid] || {};
         const fieldSize = {};
-        for (const [rgate, bucket] of Object.entries(rawFieldSize)) {
-          fieldSize[rgate] = {
-            r: bucket.races_n,
-            w: bucket.races_n > 0 ? Number(((bucket.win_n / bucket.races_n) * 100).toFixed(2)) : 0,
+        for (const bucket of FIELD_SIZE_BUCKETS) {
+          const b = rawFieldSize[bucket];
+          fieldSize[bucket] = {
+            r: b?.races_n ?? 0,
+            w: b && b.races_n > 0 ? Number(((b.win_n / b.races_n) * 100).toFixed(2)) : 0,
           };
         }
 
@@ -197,6 +265,11 @@ export default async function handler(req, res) {
           // Per-field-size breakdown, keyed by rgate (e.g. "3", "4", "5" competitors).
           // Built from actual individual race results, not estimated.
           fieldSize,
+          // Power / Variance / Adj. Odds ratings from the powcard endpoint (0-100 scale).
+          // null if this core has no powcard data for this mode.
+          power: powCardByHid[hid]?.[mode]?.power ?? null,
+          variance: powCardByHid[hid]?.[mode]?.variance ?? null,
+          adjodds: powCardByHid[hid]?.[mode]?.adjodds ?? null,
         };
       }
 
