@@ -1,9 +1,10 @@
 export default async function handler(req, res) {
   const API_KEY = process.env.DNA_API_KEY; 
-  const TEST_ID = 17851; // Inspecting one of your real vault IDs
+  const TEST_ID = 17851; 
 
   try {
-    const response = await fetch(`https://api.dnaracing.run/fbike/pub/v1/market/cores/${TEST_ID}`, {
+    // Switching to the authorized /pub/v1/cores/ endpoint matching your API scopes
+    const response = await fetch(`https://api.dnaracing.run/fbike/pub/v1/cores/${TEST_ID}`, {
       headers: { 
         "Authorization": `Bearer ${API_KEY}`,
         "Accept": "application/json"
@@ -20,7 +21,7 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     return res.status(500).json({ 
-      error: "Could not fetch specific core metadata", 
+      error: "Could not fetch specific core metadata via authorized scope", 
       message: error.message 
     });
   }
