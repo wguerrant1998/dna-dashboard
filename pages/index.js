@@ -23,6 +23,9 @@ export default function MultiModeDashboard() {
   // Field Size (Gate Number) State: 'all' or a specific rgate value like '3', '4', '5'
   const [activeFieldSize, setActiveFieldSize] = useState('all');
 
+  // Race Distance State: 'all' or a specific distance in meters, e.g. 900, 1000, ... 2300
+  const [activeDistance, setActiveDistance] = useState('all');
+
   useEffect(() => {
     fetch('/api/cores')
       .then(res => res.json())
@@ -55,9 +58,10 @@ export default function MultiModeDashboard() {
     { key: 'spin_n_go', label: 'Spin & Go' },
   ];
 
-  // Resolves the right stats block for a core based on the active mode, race type, and field size.
-  // Field size and race type are separate breakdowns in the data (no combined intersection available),
-  // so if a field size is selected, it takes priority over the race type selection.
+  // Resolves the right stats block for a core based on the active mode, plus whichever single
+  // breakdown is selected (field size, distance, or race type). These are separate breakdowns
+  // in the data with no combined intersection available, so only one applies at a time -
+  // selecting one resets the others (see the button onClick handlers below).
   // Falls back to zeroed stats if a core has no data for that slice (real absence, not simulated).
   const getStatsFor = (core) => {
     const modeData = core.modes[activeMode];
@@ -67,6 +71,13 @@ export default function MultiModeDashboard() {
       return fs
         ? { r: fs.r, w: fs.w, b: null, y: null, element: modeData.element, class: modeData.class }
         : { r: 0, w: 0, b: null, y: null, element: modeData.element, class: modeData.class };
+    }
+
+    if (activeDistance !== 'all') {
+      const d = modeData.distances?.[activeDistance];
+      return d
+        ? { ...d, element: modeData.element, class: modeData.class }
+        : { r: 0, w: 0, b: 0, y: 0, element: modeData.element, class: modeData.class };
     }
 
     if (activeRaceType === 'career') return modeData;
@@ -82,6 +93,14 @@ export default function MultiModeDashboard() {
   const availableFieldSizes = Array.from(
     new Set(
       cores.flatMap((core) => Object.keys(core.modes[activeMode]?.fieldSize || {}))
+    )
+  ).sort((a, b) => Number(a) - Number(b));
+
+  // Distinct distances (in meters) actually present in the data for the active mode,
+  // sorted numerically - only shows distances your cores have actually raced at.
+  const availableDistances = Array.from(
+    new Set(
+      cores.flatMap((core) => Object.keys(core.modes[activeMode]?.distances || {}))
     )
   ).sort((a, b) => Number(a) - Number(b));
 
@@ -159,7 +178,8 @@ export default function MultiModeDashboard() {
         <p style={{ color: '#64748b', marginBottom: '30px' }}>
           Total Vault: {cores.length} Cores Loaded Dynamically
           {activeFieldSize !== 'all' && <> — showing <strong>{activeFieldSize}-Core Race</strong> stats</>}
-          {activeFieldSize === 'all' && activeRaceType !== 'career' && <> — showing <strong>{RACE_TYPES.find(rt => rt.key === activeRaceType)?.label}</strong> stats</>}
+          {activeFieldSize === 'all' && activeDistance !== 'all' && <> — showing <strong>{activeDistance}m</strong> stats</>}
+          {activeFieldSize === 'all' && activeDistance === 'all' && activeRaceType !== 'career' && <> — showing <strong>{RACE_TYPES.find(rt => rt.key === activeRaceType)?.label}</strong> stats</>}
         </p>
 
         {/* TOP LEVEL MODE SELECTOR TABS */}
@@ -181,6 +201,42 @@ export default function MultiModeDashboard() {
 
         {/* BUTTON-BASED SORT BOARD */}
         <div style={{ backgroundColor: '#ffffff', padding: '20px', borderBottomLeftRadius: '8px', borderBottomRightRadius: '8px', marginBottom: '25px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+
+          <div style={{ marginBottom: '14px' }}>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px' }}>Field Size (Cores in Race)</div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button style={filterButtonStyle(activeFieldSize === 'all')} onClick={() => setActiveFieldSize('all')}>
+                All Sizes
+              </button>
+              {availableFieldSizes.map((size) => (
+                <button
+                  key={size}
+                  style={filterButtonStyle(activeFieldSize === size)}
+                  onClick={() => { setActiveFieldSize(size); setActiveDistance('all'); setActiveRaceType('career'); }}
+                >
+                  {size}-Core Race
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '14px' }}>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px' }}>Race Distance</div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button style={filterButtonStyle(activeDistance === 'all')} onClick={() => setActiveDistance('all')}>
+                All Distances
+              </button>
+              {availableDistances.map((dist) => (
+                <button
+                  key={dist}
+                  style={filterButtonStyle(activeDistance === dist)}
+                  onClick={() => { setActiveDistance(dist); setActiveFieldSize('all'); setActiveRaceType('career'); }}
+                >
+                  {dist}m
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div style={{ marginBottom: '14px' }}>
             <div style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px' }}>Element</div>
@@ -208,22 +264,12 @@ export default function MultiModeDashboard() {
             <div style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px' }}>Race Type</div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               {RACE_TYPES.map((rt) => (
-                <button key={rt.key} style={filterButtonStyle(activeRaceType === rt.key)} onClick={() => setActiveRaceType(rt.key)}>
+                <button
+                  key={rt.key}
+                  style={filterButtonStyle(activeRaceType === rt.key)}
+                  onClick={() => { setActiveRaceType(rt.key); setActiveFieldSize('all'); setActiveDistance('all'); }}
+                >
                   {rt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ marginTop: '14px' }}>
-            <div style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px' }}>Field Size (Cores in Race)</div>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              <button style={filterButtonStyle(activeFieldSize === 'all')} onClick={() => setActiveFieldSize('all')}>
-                All Sizes
-              </button>
-              {availableFieldSizes.map((size) => (
-                <button key={size} style={filterButtonStyle(activeFieldSize === size)} onClick={() => setActiveFieldSize(size)}>
-                  {size}-Core Race
                 </button>
               ))}
             </div>
