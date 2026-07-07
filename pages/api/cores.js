@@ -1,47 +1,118 @@
 export default async function handler(req, res) {
-  const API_KEY = process.env.DNA_API_KEY; 
-  const VAULT_ADDRESS = "0x1a1d4c5c255635a796ad6f64d16431acb2d37c90"; 
+  const API_KEY = process.env.DNA_API_KEY;
+  const VAULT_ADDRESS = "0x1a1d4c5c255635a796ad6f64d16431acb2d37c90";
+  const RVMODES = ["bike", "car", "horse"];
+  const STATS_CHUNK_SIZE = 50; // untested upper bound - lower this if the API rejects large batches
+
+  // Maps the vault endpoint's raw `type` field to the display class names
+  // your dashboard already uses.
+  const CLASS_NAME_MAP = {
+    genesis: "Genesis",
+    freak: "Freak",
+    morphed: "Morph",
+    xclass: "X-Class",
+  };
+
+  function chunk(arr, size) {
+    const out = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+  }
+
+  function titleCase(str) {
+    if (!str) return null;
+    return str.charAt(0).toUpperCase() + str.slice(1);
+  }
+
+  function authHeaders() {
+    return {
+      "Content-Type": "application/json",
+      ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}),
+    };
+  }
 
   try {
-    // 1. Fetch your 176 verified vault token IDs
-    const vaultRes = await fetch(`https://api.dnaracing.run/fbike/pub/v1/vault/${VAULT_ADDRESS}/cores`, {
-      headers: { "Authorization": `Bearer ${API_KEY}`, "Accept": "application/json" }
+    // 1. Fetch the real cores in this vault: hid, name, element, type (class), etc.
+    const vaultRes = await fetch("https://api.dnaracing.run/fbike/vault/bikes_inf", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ vault: VAULT_ADDRESS }),
     });
+
+    if (!vaultRes.ok) {
+      return res.status(502).json({ error: `Vault fetch failed with status ${vaultRes.status}` });
+    }
+
     const vaultData = await vaultRes.json();
-    
-    if (!vaultData || !vaultData.result || !Array.isArray(vaultData.result)) {
+
+    if (!vaultData || vaultData.status !== "success" || !Array.isArray(vaultData.result)) {
       return res.status(200).json([]);
     }
-    const realCoreIds = vaultData.result.map(id => Number(id)).filter(id => !isNaN(id));
 
-    // 2. High-fidelity overrides for your verified assets based on your real stats
-    const masterRegistry = {
-      2067: { name: "Yippee Fat Tyre", bike: { class: "Genesis", element: "Metal", r: 2264, w: 29.0, b: 44, y: 20 }, horse: { class: "Genesis", element: "Metal", r: 0, w: 0, b: 0, y: 0 }, car: { class: "Genesis", element: "Metal", r: 0, w: 0, b: 0, y: 0 } },
-      104:  { name: "Lux", bike: { class: "Morph", element: "Fire", r: 0, w: 0, b: 0, y: 0 }, horse: { class: "Morph", element: "Fire", r: 0, w: 0, b: 0, y: 0 }, car: { class: "Morph", element: "Fire", r: 2112, w: 33.1, b: 49, y: 26 } },
-      1715: { name: "Majestic Falcon", bike: { class: "Freak", element: "Earth", r: 0, w: 0, b: 0, y: 0 }, horse: { class: "Freak", element: "Earth", r: 2073, w: 28.4, b: 58, y: 14 }, car: { class: "Freak", element: "Earth", r: 0, w: 0, b: 0, y: 0 } },
-      6454: { name: "Valuable Pageantry", bike: { class: "Genesis", element: "Fire", r: 0, w: 0, b: 0, y: 0 }, horse: { class: "Genesis", element: "Fire", r: 0, w: 0, b: 0, y: 0 }, car: { class: "Genesis", element: "Fire", r: 2027, w: 36.2, b: 61, y: 29 } },
-      1752: { name: "Force By Force", bike: { class: "Genesis", element: "Water", r: 0, w: 0, b: 0, y: 0 }, horse: { class: "Genesis", element: "Water", r: 0, w: 0, b: 0, y: 0 }, car: { class: "Genesis", element: "Water", r: 0, w: 0, b: 0, y: 0 } }
-    };
+    const cores = vaultData.result;
+    const hids = cores.map((c) => Number(c.hid)).filter((n) => !isNaN(n));
 
-    const structuredCores = realCoreIds.map((id) => {
-      const match = masterRegistry[id];
-      const elementsList = ['Metal', 'Fire', 'Earth', 'Water'];
-      const classesList = ['Genesis', 'Morph', 'Freak', 'X-Class'];
+    // 2. Fetch real career stats per vehicle mode (bike / car / horse), in batches.
+    const statsByMode = { bike: {}, car: {}, horse: {} };
+
+    for (const mode of RVMODES) {
+      const batches = chunk(hids, STATS_CHUNK_SIZE);
+
+      for (const batch of batches) {
+        const statsRes = await fetch("https://api.dnaracing.run/fbike/cores/hstats_doc_bulk", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ hids: batch, rvmode: mode }),
+        });
+
+        if (!statsRes.ok) continue; // skip this batch rather than fail the whole request
+
+        const statsData = await statsRes.json();
+        if (!statsData || statsData.status !== "success" || !Array.isArray(statsData.result)) continue;
+
+        for (const doc of statsData.result) {
+          const career = doc?.data?.career;
+          if (!career) continue;
+
+          statsByMode[mode][doc.hid] = {
+            r: career.races_n ?? 0,
+            w: career.win_p != null ? Number((career.win_p * 100).toFixed(2)) : 0,
+            b: career.bluestar_p != null ? Number((career.bluestar_p * 100).toFixed(2)) : 0,
+            y: career.yellowstar_p != null ? Number((career.yellowstar_p * 100).toFixed(2)) : 0,
+          };
+        }
+      }
+    }
+
+    // 3. Join vault metadata with real per-mode stats. No random/simulated values anywhere.
+    const structuredCores = cores.map((c) => {
+      const hid = Number(c.hid);
+      const className = CLASS_NAME_MAP[c.type] || c.type || null;
+      const element = titleCase(c.element);
+
+      const modes = {};
+      for (const mode of RVMODES) {
+        const real = statsByMode[mode][hid];
+        modes[mode] = {
+          class: className,
+          element,
+          r: real?.r ?? 0,
+          w: real?.w ?? 0,
+          b: real?.b ?? 0,
+          y: real?.y ?? 0,
+        };
+      }
 
       return {
-        hid: id,
-        name: match ? match.name : `Core #${id}`,
-        // Isolated specifications container per vehicle mode
-        modes: {
-          bike: match ? match.bike : { class: classesList[id % 4], element: elementsList[id % 4], r: Math.floor((id % 150)), w: 25.0, b: 30, y: 10 },
-          horse: match ? match.horse : { class: classesList[(id + 1) % 4], element: elementsList[(id + 1) % 4], r: Math.floor((id % 120)), w: 22.5, b: 25, y: 8 },
-          car: match ? match.car : { class: classesList[(id + 2) % 4], element: elementsList[(id + 2) % 4], r: Math.floor((id % 200)), w: 28.0, b: 35, y: 12 }
-        }
+        hid,
+        name: c.name || `Core #${hid}`,
+        modes,
       };
     });
 
     return res.status(200).json(structuredCores);
   } catch (error) {
-    return res.status(200).json([]);
+    console.error("cores.js error:", error);
+    return res.status(500).json({ error: "Failed to fetch core data" });
   }
 }
