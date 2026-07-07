@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 export default function MultiModeDashboard() {
   const [cores, setCores] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [updatedAt, setUpdatedAt] = useState(null);
 
   // Discipline Mode State: 'bike' | 'horse' | 'car'
   const [activeMode, setActiveMode] = useState('bike');
@@ -41,11 +42,25 @@ export default function MultiModeDashboard() {
     fetch('/api/cores')
       .then(res => res.json())
       .then(data => {
-        setCores(Array.isArray(data) ? data : []);
+        setCores(Array.isArray(data?.cores) ? data.cores : []);
+        setUpdatedAt(data?.updatedAt ?? null);
         setLoading(false);
       })
       .catch(() => setLoading(false));
   }, []);
+
+  // Human-readable "X minutes/hours ago" from the cache's updatedAt timestamp
+  const formatUpdatedAt = (iso) => {
+    if (!iso) return null;
+    const diffMs = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs} hour${hrs === 1 ? '' : 's'} ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days} day${days === 1 ? '' : 's'} ago`;
+  };
 
   const getElementStyle = (element) => {
     let bg = '#475569';
@@ -196,7 +211,7 @@ export default function MultiModeDashboard() {
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
 
         <h2>DNA Racing Collection Matrix</h2>
-        <p style={{ color: '#64748b', marginBottom: '30px' }}>
+        <p style={{ color: '#64748b', marginBottom: '4px' }}>
           Total Vault: {cores.length} Cores Loaded Dynamically
           {(activeFieldSizes.size > 0 || activeDistances.size > 0 || activeRaceTypes.size > 0) && (
             <> — filtered by
@@ -205,6 +220,13 @@ export default function MultiModeDashboard() {
               {activeRaceTypes.size > 0 && <> <strong>{Array.from(activeRaceTypes).map(formatLabel).join(', ')}</strong></>}
             </>
           )}
+        </p>
+        <p style={{ color: '#94a3b8', fontSize: '13px', marginBottom: '30px' }}>
+          {updatedAt
+            ? `Data last refreshed ${formatUpdatedAt(updatedAt)} (background job updates this automatically)`
+            : (!loading && cores.length === 0)
+              ? 'No cached data yet — the background refresh job may not have run for the first time yet.'
+              : ''}
         </p>
 
         {/* TOP LEVEL MODE SELECTOR TABS */}
