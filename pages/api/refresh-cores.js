@@ -379,7 +379,7 @@ export default async function handler(req, res) {
     const payload = { updatedAt, cores: structuredCores };
 
     await put(CACHE_KEY, JSON.stringify(payload), {
-      access: "public",
+      access: "private",
       addRandomSuffix: false,
       allowOverwrite: true,
       contentType: "application/json",
