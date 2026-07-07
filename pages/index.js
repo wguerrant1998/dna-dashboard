@@ -65,36 +65,40 @@ export default function MultiModeDashboard() {
   // Falls back to zeroed stats if a core has no data for that slice (real absence, not simulated).
   const getStatsFor = (core) => {
     const modeData = core.modes[activeMode];
+    const powerRatings = { power: modeData.power, variance: modeData.variance, adjodds: modeData.adjodds };
 
     if (activeFieldSize !== 'all') {
       const fs = modeData.fieldSize?.[activeFieldSize];
       return fs
-        ? { r: fs.r, w: fs.w, b: null, y: null, element: modeData.element, class: modeData.class }
-        : { r: 0, w: 0, b: null, y: null, element: modeData.element, class: modeData.class };
+        ? { r: fs.r, w: fs.w, b: null, y: null, element: modeData.element, class: modeData.class, ...powerRatings }
+        : { r: 0, w: 0, b: null, y: null, element: modeData.element, class: modeData.class, ...powerRatings };
     }
 
     if (activeDistance !== 'all') {
       const d = modeData.distances?.[activeDistance];
       return d
-        ? { ...d, element: modeData.element, class: modeData.class }
-        : { r: 0, w: 0, b: 0, y: 0, element: modeData.element, class: modeData.class };
+        ? { ...d, element: modeData.element, class: modeData.class, ...powerRatings }
+        : { r: 0, w: 0, b: 0, y: 0, element: modeData.element, class: modeData.class, ...powerRatings };
     }
 
     if (activeRaceType === 'career') return modeData;
 
     const rt = modeData.raceTypes?.[activeRaceType];
     return rt
-      ? { ...rt, element: modeData.element, class: modeData.class }
-      : { r: 0, w: 0, b: 0, y: 0, element: modeData.element, class: modeData.class };
+      ? { ...rt, element: modeData.element, class: modeData.class, ...powerRatings }
+      : { r: 0, w: 0, b: 0, y: 0, element: modeData.element, class: modeData.class, ...powerRatings };
   };
 
-  // Distinct field sizes (rgate values) actually present in the data for the active mode,
-  // sorted numerically - built from real data, never a hardcoded guess at possible race sizes.
-  const availableFieldSizes = Array.from(
-    new Set(
-      cores.flatMap((core) => Object.keys(core.modes[activeMode]?.fieldSize || {}))
-    )
-  ).sort((a, b) => Number(a) - Number(b));
+  // Fixed field-size buckets - always shown regardless of what's in the data,
+  // matching the buckets computed server-side in cores.js.
+  const FIELD_SIZE_BUCKETS = [
+    { key: '2', label: '2 Cores' },
+    { key: '3', label: '3 Cores' },
+    { key: '4', label: '4 Cores' },
+    { key: '5', label: '5 Cores' },
+    { key: '6', label: '6 Cores' },
+    { key: '7+', label: '7+ Cores' },
+  ];
 
   // Distinct distances (in meters) actually present in the data for the active mode,
   // sorted numerically - only shows distances your cores have actually raced at.
@@ -177,7 +181,7 @@ export default function MultiModeDashboard() {
         <h2>DNA Racing Collection Matrix</h2>
         <p style={{ color: '#64748b', marginBottom: '30px' }}>
           Total Vault: {cores.length} Cores Loaded Dynamically
-          {activeFieldSize !== 'all' && <> — showing <strong>{activeFieldSize}-Core Race</strong> stats</>}
+          {activeFieldSize !== 'all' && <> — showing <strong>{FIELD_SIZE_BUCKETS.find(b => b.key === activeFieldSize)?.label}</strong> stats</>}
           {activeFieldSize === 'all' && activeDistance !== 'all' && <> — showing <strong>{activeDistance}m</strong> stats</>}
           {activeFieldSize === 'all' && activeDistance === 'all' && activeRaceType !== 'career' && <> — showing <strong>{RACE_TYPES.find(rt => rt.key === activeRaceType)?.label}</strong> stats</>}
         </p>
@@ -208,13 +212,13 @@ export default function MultiModeDashboard() {
               <button style={filterButtonStyle(activeFieldSize === 'all')} onClick={() => setActiveFieldSize('all')}>
                 All Sizes
               </button>
-              {availableFieldSizes.map((size) => (
+              {FIELD_SIZE_BUCKETS.map(({ key, label }) => (
                 <button
-                  key={size}
-                  style={filterButtonStyle(activeFieldSize === size)}
-                  onClick={() => { setActiveFieldSize(size); setActiveDistance('all'); setActiveRaceType('career'); }}
+                  key={key}
+                  style={filterButtonStyle(activeFieldSize === key)}
+                  onClick={() => { setActiveFieldSize(key); setActiveDistance('all'); setActiveRaceType('career'); }}
                 >
-                  {size}-Core Race
+                  {label}
                 </button>
               ))}
             </div>
@@ -288,6 +292,9 @@ export default function MultiModeDashboard() {
                 <th style={sortableHeaderStyle} onClick={() => handleSort('w')}>Win Pct{sortArrow('w')}</th>
                 <th style={sortableHeaderStyle} onClick={() => handleSort('b')}>Blue Star Info{sortArrow('b')}</th>
                 <th style={sortableHeaderStyle} onClick={() => handleSort('y')}>Yellow Star Info{sortArrow('y')}</th>
+                <th style={sortableHeaderStyle} onClick={() => handleSort('power')}>PWR{sortArrow('power')}</th>
+                <th style={sortableHeaderStyle} onClick={() => handleSort('variance')}>VAR{sortArrow('variance')}</th>
+                <th style={sortableHeaderStyle} onClick={() => handleSort('adjodds')}>ADJ{sortArrow('adjodds')}</th>
               </tr>
             </thead>
             <tbody>
@@ -295,13 +302,27 @@ export default function MultiModeDashboard() {
                 const currentStats = getStatsFor(core);
                 return (
                   <tr key={core.hid} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '16px', fontWeight: 'bold' }}>{core.name} <span style={{ color: '#94a3b8', fontWeight: '400' }}>#{core.hid}</span></td>
+                    <td style={{ padding: '16px', fontWeight: 'bold' }}>
+                      <a
+                        href={`https://fbike.dnaracing.run/core/${core.hid}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: '#1e293b', textDecoration: 'none' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
+                        onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
+                      >
+                        {core.name} <span style={{ color: '#94a3b8', fontWeight: '400' }}>#{core.hid}</span>
+                      </a>
+                    </td>
                     <td style={{ padding: '16px' }}><span style={getElementStyle(currentStats.element)}>{currentStats.element}</span></td>
                     <td style={{ padding: '16px' }}><span style={{ backgroundColor: '#e0f2fe', color: '#0369a1', padding: '3px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '700' }}>{currentStats.class}</span></td>
                     <td style={{ padding: '16px', fontWeight: '600' }}>{currentStats.r}</td>
                     <td style={{ padding: '16px', color: currentStats.r > 0 ? '#16a34a' : '#94a3b8', fontWeight: '700' }}>{currentStats.w}%</td>
                     <td style={{ padding: '16px', color: '#2563eb' }}>{currentStats.b != null ? `${currentStats.b}%` : '—'}</td>
                     <td style={{ padding: '16px', color: '#d97706' }}>{currentStats.y != null ? `${currentStats.y}%` : '—'}</td>
+                    <td style={{ padding: '16px', fontWeight: '600' }}>{currentStats.power != null ? currentStats.power : '—'}</td>
+                    <td style={{ padding: '16px', fontWeight: '600' }}>{currentStats.variance != null ? currentStats.variance : '—'}</td>
+                    <td style={{ padding: '16px', fontWeight: '600' }}>{currentStats.adjodds != null ? currentStats.adjodds : '—'}</td>
                   </tr>
                 );
               })}
